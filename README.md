@@ -1,5 +1,7 @@
 # PTCG Rust Engine
 
+> **参考来源**: 本项目从 Godot/GDScript 项目 [PtcgDeckAgent](https://github.com/lishiyuwhu/PtcgDeckAgent) 迁移而来，将原有的 GDScript 实现重写为 Rust，并扩展了 Python Gym 接口以支持强化学习训练。
+
 Pokemon TCG game engine written in Rust, designed for reinforcement learning training at scale.
 
 ## Features
