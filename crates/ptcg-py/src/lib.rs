@@ -58,7 +58,8 @@ impl PyEngine {
             opponent_name: "Opponent".into(),
             starting_player: StartingPlayer::Random,
         };
-        let engine = Engine::new(config, seed);
+        let mut engine = Engine::new(config, seed);
+        engine.record_replay = false; // RL training mode: skip action log overhead
         let obs_dim = Observation::vector_dim_extended();
         Self {
             engine,
@@ -103,12 +104,11 @@ impl PyEngine {
             return Ok((obs, 0.0, self.engine.state().is_done(), None, 0, "".into(), "[]".into()));
         }
 
-        let encoded = self.codec.encode(&legal);
+        let (sorted_indices, _mask) = self.codec.encode_by_index(&legal);
 
-        let action = match self.codec.decode(&encoded, action_index) {
+        let action = match self.codec.decode_from_slice(&legal, &sorted_indices, action_index) {
             Some(a) => a,
             None => {
-                // Invalid action: return negative reward and no state change
                 let obs = self.observe(player_id);
                 return Ok((
                     obs,
@@ -161,10 +161,9 @@ impl PyEngine {
     // ── Observation ───────────────────────────────────────────────
 
     /// Get extended observation vector for a player (float list).
+    /// Uses direct state-to-vector path without intermediate Observation allocation.
     fn observe(&self, player_id: usize) -> Vec<f32> {
-        let player = PlayerId(player_id);
-        let obs = Observation::from_state(self.engine.state(), player);
-        obs.to_vector_extended()
+        ptcg_core::observe::vector_from_state(self.engine.state(), PlayerId(player_id))
     }
 
     /// Get observation as a structured Python dict (JSON string).
@@ -455,12 +454,97 @@ fn parse_choices(map: &HashMap<String, serde_json::Value>) -> Choices {
     choices
 }
 
+// ── Batch Runner ────────────────────────────────────────────────────
+
+/// Run N games in parallel with random actions, returning statistics.
+#[pyfunction]
+fn run_batch(n_games: usize, seed: u64, threads: Option<usize>) -> PyResult<String> {
+    use rayon::prelude::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use ptcg_core::deck::{MatchConfig, StartingPlayer};
+
+    if let Some(n) = threads {
+        if n > 0 {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(n)
+                .build_global()
+                .ok();
+        }
+    }
+
+    let p0_wins = AtomicU64::new(0);
+    let p1_wins = AtomicU64::new(0);
+    let draws = AtomicU64::new(0);
+    let total_turns = AtomicU64::new(0);
+    let total_steps = AtomicU64::new(0);
+
+    (0..n_games).into_par_iter().for_each(|i| {
+        let game_seed = seed.wrapping_add(i as u64);
+        let config = MatchConfig {
+            player_deck: ptcg_core::deck::templates::miraidon_deck(),
+            opponent_deck: ptcg_core::deck::templates::charizard_pidgeot_deck(),
+            player_name: "P0".into(),
+            opponent_name: "P1".into(),
+            starting_player: StartingPlayer::Random,
+        };
+        let mut engine = Engine::new(config, game_seed);
+        engine.record_replay = false;
+        let mut steps = 0usize;
+        let max_steps = 2000;
+
+        while !engine.state().is_done() && steps < max_steps {
+            let is_setup = matches!(
+                engine.state().turn.phase,
+                ptcg_core::state::Phase::Setup | ptcg_core::state::Phase::Mulligan
+            );
+            let players: Vec<PlayerId> = if is_setup {
+                vec![PlayerId(0), PlayerId(1)]
+            } else {
+                vec![engine.state().turn.active_player]
+            };
+            for &p in &players {
+                if engine.state().is_done() {
+                    break;
+                }
+                let actions = engine.legal_actions(p);
+                if actions.is_empty() {
+                    continue;
+                }
+                let idx = (game_seed.wrapping_add(steps as u64) as usize) % actions.len();
+                engine.step(p, actions[idx].clone());
+                steps += 1;
+            }
+        }
+
+        total_turns.fetch_add(engine.state().turn.turn_number as u64, Ordering::Relaxed);
+        total_steps.fetch_add(steps as u64, Ordering::Relaxed);
+        match engine.state().winner {
+            Some(PlayerId(0)) => { p0_wins.fetch_add(1, Ordering::Relaxed); }
+            Some(PlayerId(1)) => { p1_wins.fetch_add(1, Ordering::Relaxed); }
+            _ => { draws.fetch_add(1, Ordering::Relaxed); }
+        }
+    });
+
+    let n = n_games as f64;
+    let result = serde_json::json!({
+        "total_games": n_games,
+        "player0_wins": p0_wins.load(Ordering::Relaxed),
+        "player1_wins": p1_wins.load(Ordering::Relaxed),
+        "draws": draws.load(Ordering::Relaxed),
+        "avg_turns": total_turns.load(Ordering::Relaxed) as f64 / n,
+        "avg_steps": total_steps.load(Ordering::Relaxed) as f64 / n,
+    });
+
+    Ok(serde_json::to_string(&result).unwrap_or_else(|_| "{}".into()))
+}
+
 // ── Python Module ─────────────────────────────────────────────────────
 
 #[pymodule]
 fn ptcg_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(create_engine, m)?)?;
     m.add_function(wrap_pyfunction!(create_engine_mirror, m)?)?;
+    m.add_function(wrap_pyfunction!(run_batch, m)?)?;
     m.add_class::<PyEngine>()?;
     Ok(())
 }

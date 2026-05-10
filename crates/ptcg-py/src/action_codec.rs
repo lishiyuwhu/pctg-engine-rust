@@ -29,6 +29,7 @@ impl ActionCodec {
     }
 
     /// Encode legal actions into sorted order with a boolean mask.
+    /// Clones the action Vec for sorting; prefer `encode_by_index` for hot paths.
     pub fn encode(&self, legal_actions: &[Action]) -> EncodedActions {
         let mut sorted: Vec<Action> = legal_actions.to_vec();
         sorted.sort_by_key(|a| Self::action_sort_key(a));
@@ -44,6 +45,21 @@ impl ActionCodec {
         }
     }
 
+    /// Encode without cloning actions: returns sorted indices + mask.
+    /// The original actions slice is unchanged; indices point into it.
+    pub fn encode_by_index(&self, legal_actions: &[Action]) -> (Vec<usize>, Vec<bool>) {
+        let mut indices: Vec<usize> = (0..legal_actions.len()).collect();
+        indices.sort_by_key(|&i| Self::action_sort_key(&legal_actions[i]));
+
+        let mut mask = vec![false; self.max_action_space];
+        let limit = indices.len().min(self.max_action_space);
+        for i in 0..limit {
+            mask[i] = true;
+        }
+
+        (indices, mask)
+    }
+
     /// Decode a flat integer index back to an Action.
     /// Returns None if the index is out of bounds or not legal.
     pub fn decode(&self, encoded: &EncodedActions, action_index: usize) -> Option<Action> {
@@ -51,6 +67,21 @@ impl ActionCodec {
             return None;
         }
         Some(encoded.actions[action_index].clone())
+    }
+
+    /// Decode from an index-sorted slice (used with encode_by_index).
+    /// Returns a clone of the action at the sorted index.
+    pub fn decode_from_slice(
+        &self,
+        legal_actions: &[Action],
+        sorted_indices: &[usize],
+        action_index: usize,
+    ) -> Option<Action> {
+        if action_index >= sorted_indices.len() {
+            return None;
+        }
+        let original_idx = sorted_indices[action_index];
+        legal_actions.get(original_idx).cloned()
     }
 
     /// Compute canonical sort key for an Action.

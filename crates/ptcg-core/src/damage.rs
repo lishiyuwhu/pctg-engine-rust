@@ -194,11 +194,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_damage_calculation() {
-        let calculator = DamageCalculator::new();
-        
-        // Basic test - damage should be at least 0
-        // Full integration tests would require full game state setup
-        assert!(true);
+    fn test_damage_calculator_creation() {
+        let _calc = DamageCalculator::new();
+    }
+
+    #[test]
+    fn test_damage_calculator_default() {
+        let _calc: DamageCalculator = Default::default();
     }
 }

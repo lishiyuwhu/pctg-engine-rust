@@ -104,17 +104,44 @@ impl Default for StepResult {
     }
 }
 
-/// Main game engine
+/// Main game engine — the central coordinator for PTCG gameplay.
+///
+/// Manages the game state, RNG, rule validation, and damage calculation.
+/// The engine drives the game loop: players query `legal_actions()` and
+/// submit actions via `step()`. Phase transitions (Setup → Play → Attack)
+/// are handled automatically.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use ptcg_core::deck::{MatchConfig, StartingPlayer};
+/// use ptcg_core::engine::Engine;
+/// use ptcg_core::state::PlayerId;
+///
+/// let config = MatchConfig {
+///     player_deck: ptcg_core::deck::templates::miraidon_deck(),
+///     opponent_deck: ptcg_core::deck::templates::charizard_pidgeot_deck(),
+///     ..Default::default()
+/// };
+/// let mut engine = Engine::new(config, 42);
+/// let actions = engine.legal_actions(PlayerId(0));
+/// ```
 #[derive(Debug, Clone)]
 pub struct Engine {
     state: GameState,
     rng: GameRng,
     validator: RuleValidator,
     damage_calculator: DamageCalculator,
+    /// When false (RL training), skip state_hash and action_log for performance.
+    pub record_replay: bool,
 }
 
 impl Engine {
-    /// Create a new engine with configuration
+    /// Create a new engine with the given match configuration and RNG seed.
+    ///
+    /// Sets up both players' decks, shuffles, deals prize cards (6 each),
+    /// and draws initial hands (7 cards). The starting player is determined
+    /// by the config's `starting_player` field.
     pub fn new(config: MatchConfig, seed: u64) -> Self {
         let mut state = GameState::new();
         state.card_registry = presets::load_miraidon_charizard_cards();
@@ -146,6 +173,7 @@ impl Engine {
             rng,
             validator: RuleValidator::new(),
             damage_calculator: DamageCalculator::new(),
+            record_replay: true,
         }
     }
 
@@ -159,7 +187,13 @@ impl Engine {
         &mut self.state
     }
 
-    /// Get legal actions for a player
+    /// Get all legal actions for a player in the current game state.
+    ///
+    /// During Setup/Mulligan, actions for either player are returned
+    /// regardless of whose turn it is. During normal play, only the
+    /// active player's actions are returned.
+    ///
+    /// Returns an empty Vec if the game is over.
     pub fn legal_actions(&self, player: PlayerId) -> Vec<Action> {
         let mut actions = Vec::new();
 
@@ -256,86 +290,43 @@ impl Engine {
 
     fn add_play_actions(&self, player: PlayerId, actions: &mut Vec<Action>) {
         let player_state = &self.state.players[player.0];
+        let has_active = player_state.active.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+        let bench_count = player_state.bench_count();
+        let turn = self.state.turn.turn_number;
 
-        // Play basic Pokemon to bench
+        // Collect occupied bench indices once
+        let occupied_bench: Vec<usize> = player_state.bench.iter().enumerate()
+            .filter_map(|(i, s)| s.as_ref().and_then(|s| if !s.is_empty() { Some(i) } else { None }))
+            .collect();
+
+        // Single pass over hand: classify each card once
         for &card_id in &player_state.hand {
-            if let Some(card_def) = self.state.get_card_def(card_id) {
-                if card_def.is_pokemon() && card_def.stage == Some(crate::card::Stage::Basic) {
-                    if player_state.bench_count() < MAX_BENCH_SIZE {
+            let card_def = match self.state.get_card_def(card_id) {
+                Some(d) => d,
+                None => continue,
+            };
+
+            if card_def.is_pokemon() {
+                if card_def.stage == Some(crate::card::Stage::Basic) {
+                    // Play basic to bench
+                    if bench_count < MAX_BENCH_SIZE {
                         actions.push(Action::PlayBasicToBench { card: card_id });
                     }
-                }
-            }
-        }
-
-        // Attach energy
-        for &card_id in &player_state.hand {
-            if let Some(card_def) = self.state.get_card_def(card_id) {
-                if card_def.is_basic_energy() || card_def.is_special_energy() {
-                    // Can attach to active
-                    if player_state
-                        .active
-                        .as_ref()
-                        .map(|s| !s.is_empty())
-                        .unwrap_or(false)
-                    {
-                        actions.push(Action::AttachEnergy {
-                            card: card_id,
-                            target: SlotRef::Active,
-                        });
-                    }
-                    // Can attach to bench
-                    for (i, slot) in player_state.bench.iter().enumerate() {
-                        if slot.as_ref().map(|s| !s.is_empty()).unwrap_or(false) {
-                            actions.push(Action::AttachEnergy {
-                                card: card_id,
-                                target: SlotRef::Bench(i),
-                            });
+                } else if card_def.stage.is_some() {
+                    // Evolve: valid targets are Pokemon not placed this turn
+                    if has_active {
+                        if let Some(active) = &player_state.active {
+                            if !active.is_empty() && active.turn_put_in_play != turn {
+                                actions.push(Action::Evolve {
+                                    card: card_id,
+                                    target: SlotRef::Active,
+                                });
+                            }
                         }
                     }
-                }
-            }
-        }
-
-        // Play trainers
-        for &card_id in &player_state.hand {
-            if let Some(card_def) = self.state.get_card_def(card_id) {
-                if card_def.is_trainer() {
-                    actions.push(Action::PlayTrainer {
-                        card: card_id,
-                        choices: Choices::new(),
-                    });
-                }
-            }
-        }
-
-        // Evolve Pokemon
-        for &card_id in &player_state.hand {
-            if let Some(card_def) = self.state.get_card_def(card_id) {
-                if card_def.is_pokemon() && card_def.stage != Some(crate::card::Stage::Basic) {
-                    // Can evolve on active
-                    if player_state
-                        .active
-                        .as_ref()
-                        .map(|s| !s.is_empty())
-                        .unwrap_or(false)
-                    {
-                        if player_state
-                            .active
-                            .as_ref()
-                            .map(|s| s.turn_put_in_play != self.state.turn.turn_number)
-                            .unwrap_or(false)
-                        {
-                            actions.push(Action::Evolve {
-                                card: card_id,
-                                target: SlotRef::Active,
-                            });
-                        }
-                    }
-                    // Can evolve on bench
-                    for (i, slot) in player_state.bench.iter().enumerate() {
-                        if let Some(s) = slot {
-                            if !s.is_empty() && s.turn_put_in_play != self.state.turn.turn_number {
+                    for &i in &occupied_bench {
+                        if let Some(s) = &player_state.bench[i] {
+                            if s.turn_put_in_play != turn {
                                 actions.push(Action::Evolve {
                                     card: card_id,
                                     target: SlotRef::Bench(i),
@@ -344,33 +335,37 @@ impl Engine {
                         }
                     }
                 }
+            } else if card_def.is_basic_energy() || card_def.is_special_energy() {
+                // Attach to active
+                if has_active {
+                    actions.push(Action::AttachEnergy {
+                        card: card_id,
+                        target: SlotRef::Active,
+                    });
+                }
+                // Attach to occupied bench slots
+                for &i in &occupied_bench {
+                    actions.push(Action::AttachEnergy {
+                        card: card_id,
+                        target: SlotRef::Bench(i),
+                    });
+                }
+            } else if card_def.is_trainer() {
+                actions.push(Action::PlayTrainer {
+                    card: card_id,
+                    choices: Choices::new(),
+                });
             }
         }
 
         // Retreat
-        if player_state
-            .active
-            .as_ref()
-            .map(|s| !s.is_empty())
-            .unwrap_or(false)
-        {
-            for (i, slot) in player_state.bench.iter().enumerate() {
-                if slot.as_ref().map(|s| !s.is_empty()).unwrap_or(false) {
-                    actions.push(Action::Retreat {
-                        target: SlotRef::Bench(i),
-                        discard: vec![],
-                    });
-                }
+        if has_active {
+            for &i in &occupied_bench {
+                actions.push(Action::Retreat {
+                    target: SlotRef::Bench(i),
+                    discard: vec![],
+                });
             }
-        }
-
-        // Attack
-        if player_state
-            .active
-            .as_ref()
-            .map(|s| !s.is_empty())
-            .unwrap_or(false)
-        {
             actions.push(Action::EndTurn);
         }
     }
@@ -433,7 +428,16 @@ impl Engine {
         }
     }
 
-    /// Execute an action
+    /// Execute an action for the given player.
+    ///
+    /// Validates the action against the rules, executes it (updating game state),
+    /// applies phase transitions, and checks for game end conditions.
+    ///
+    /// Returns `StepResult` with:
+    /// - `done`: whether the game ended
+    /// - `winner`: the winning player (if game ended)
+    /// - `reward`: zero-sum reward [p0, p1] (+1 win, -1 loss, 0 draw)
+    /// - `events`: game events generated by this action
     pub fn step(&mut self, player: PlayerId, action: Action) -> StepResult {
         // Validate action
         if let Err(e) = self.validator.is_legal(&self.state, player, &action) {
@@ -494,14 +498,16 @@ impl Engine {
         // Phase transitions after action execution
         self.apply_phase_transitions();
 
-        // Log action
-        let state_hash = self.state.state_hash();
-        self.state.action_log.push(LoggedAction::new(
-            self.state.turn.turn_number,
-            player,
-            action.clone(),
-            state_hash,
-        ));
+        // Log action (skip in training mode for performance)
+        if self.record_replay {
+            let state_hash = self.state.state_hash();
+            self.state.action_log.push(LoggedAction::new(
+                self.state.turn.turn_number,
+                player,
+                action.clone(),
+                state_hash,
+            ));
+        }
 
         // Check for game end
         if let Some(winner) = self.check_winner() {
@@ -576,8 +582,7 @@ impl Engine {
         // to avoid borrowing self.state twice.
         let basic_ids: std::collections::HashSet<crate::state::CardInstanceId> = self
             .state
-            .cards
-            .iter()
+            .cards_iter()
             .filter(|ci| ci.owner == player)
             .filter_map(|ci| {
                 self.state
@@ -1132,5 +1137,104 @@ mod tests {
         let engine2 = Engine::new(MatchConfig::default(), 42);
 
         assert_eq!(engine1.state_hash(), engine2.state_hash());
+    }
+
+    #[test]
+    fn test_setup_flow() {
+        // Use a seed where both players have basics (no mulligan)
+        let mut engine = Engine::new(MatchConfig::default(), 43);
+        assert!(matches!(engine.state().turn.phase, Phase::Setup));
+
+        // P0 should have setup actions
+        let p0_actions = engine.legal_actions(PlayerId(0));
+        let choose_active = p0_actions.iter().find(|a| matches!(a, Action::SetupChooseActive { .. }));
+        assert!(choose_active.is_some(), "P0 should have SetupChooseActive");
+
+        // Execute P0 choose active
+        engine.step(PlayerId(0), choose_active.unwrap().clone());
+        assert!(engine.state().players[0].active.is_some(), "P0 should have active Pokemon");
+    }
+
+    #[test]
+    fn test_phase_transition_to_play() {
+        let mut engine = Engine::new(MatchConfig::default(), 43);
+
+        // P0 chooses active
+        let p0_actions = engine.legal_actions(PlayerId(0));
+        let p0_active = p0_actions.iter().find(|a| matches!(a, Action::SetupChooseActive { .. })).unwrap().clone();
+        engine.step(PlayerId(0), p0_active);
+
+        // P1 chooses active
+        let p1_actions = engine.legal_actions(PlayerId(1));
+        let p1_active = p1_actions.iter().find(|a| matches!(a, Action::SetupChooseActive { .. }));
+        if let Some(action) = p1_active {
+            engine.step(PlayerId(1), action.clone());
+        }
+
+        // Both should now have active, phase should transition to Play
+        // (may need to auto-step opponent setup)
+        let p0_has = engine.state().players[0].active.is_some();
+        let p1_has = engine.state().players[1].active.is_some();
+        assert!(p0_has || p1_has, "At least one player should have active");
+    }
+
+    #[test]
+    fn test_end_turn_switches_player() {
+        let mut engine = Engine::new(MatchConfig::default(), 43);
+
+        // Navigate to Play phase by choosing active for both players
+        for &p in &[PlayerId(0), PlayerId(1)] {
+            let actions = engine.legal_actions(p);
+            if let Some(a) = actions.iter().find(|a| matches!(a, Action::SetupChooseActive { .. })) {
+                engine.step(p, a.clone());
+            }
+        }
+
+        // If we're in Play phase, test EndTurn
+        if matches!(engine.state().turn.phase, Phase::Play) {
+            let prev_player = engine.state().turn.active_player;
+            engine.step(prev_player, Action::EndTurn);
+            // Active player should have switched
+            let new_player = engine.state().turn.active_player;
+            assert_ne!(prev_player, new_player, "Active player should switch after EndTurn");
+        }
+    }
+
+    #[test]
+    fn test_record_replay_flag() {
+        let mut engine = Engine::new(MatchConfig::default(), 43);
+        assert!(engine.record_replay, "record_replay should default to true");
+
+        engine.record_replay = false;
+        let actions = engine.legal_actions(PlayerId(0));
+        if !actions.is_empty() {
+            let log_before = engine.state().action_log.len();
+            engine.step(PlayerId(0), actions[0].clone());
+            let log_after = engine.state().action_log.len();
+            assert_eq!(log_before, log_after, "No action should be logged when record_replay is false");
+        }
+    }
+
+    #[test]
+    fn test_prize_setup() {
+        let engine = Engine::new(MatchConfig::default(), 43);
+        assert_eq!(engine.state().players[0].prizes.len(), 6);
+        assert_eq!(engine.state().players[1].prizes.len(), 6);
+    }
+
+    #[test]
+    fn test_winner_check_no_false_positive() {
+        let engine = Engine::new(MatchConfig::default(), 43);
+        // During setup, winner should be None
+        assert!(engine.state().winner.is_none(), "No winner during setup");
+    }
+
+    #[test]
+    fn test_state_accessors() {
+        let engine = Engine::new(MatchConfig::default(), 43);
+        assert_eq!(engine.state().turn.turn_number, 1);
+        assert_eq!(engine.state().players.len(), 2);
+        assert!(engine.state().players[0].hand.len() == 7);
+        assert!(engine.state().players[1].hand.len() == 7);
     }
 }

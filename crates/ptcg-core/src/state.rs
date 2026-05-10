@@ -295,7 +295,7 @@ pub struct GameState {
     pub players: [PlayerState; 2],
     pub turn: TurnState,
     pub card_registry: CardRegistry,
-    pub cards: Vec<CardInstance>,
+    pub cards: std::collections::HashMap<CardInstanceId, CardInstance>,
     pub next_card_id: u32,
     pub winner: Option<PlayerId>,
     pub action_log: Vec<crate::action::LoggedAction>,
@@ -307,7 +307,7 @@ impl GameState {
             players: [PlayerState::new(), PlayerState::new()],
             turn: TurnState::new(),
             card_registry: CardRegistry::new(),
-            cards: Vec::new(),
+            cards: std::collections::HashMap::new(),
             next_card_id: 0,
             winner: None,
             action_log: Vec::new(),
@@ -322,12 +322,17 @@ impl GameState {
         let id = CardInstanceId(self.next_card_id);
         self.next_card_id += 1;
         let instance = CardInstance::new(id, def_id, owner);
-        self.cards.push(instance);
+        self.cards.insert(id, instance);
         id
     }
 
     pub fn get_card(&self, id: CardInstanceId) -> Option<&CardInstance> {
-        self.cards.iter().find(|c| c.id == id)
+        self.cards.get(&id)
+    }
+
+    /// Iterate over all card instances (for cases that need full traversal).
+    pub fn cards_iter(&self) -> impl Iterator<Item = &CardInstance> {
+        self.cards.values()
     }
 
     pub fn get_card_def(&self, id: CardInstanceId) -> Option<&crate::card::CardDef> {
