@@ -1,0 +1,200 @@
+# Miraidon ex Deck
+# Deck ID: 575720
+# Source: https://tcg.mik.moe/decks/list/575720
+# Strategy: Electric Generator acceleration, Iron Hands ex as primary attacker
+
+deck_name: Miraidon
+deck_name_en: Miraidon
+deck_id: 575720
+total_cards: 60
+
+card_list:
+  # Pokemon (20)
+  - card_id: CSV1C_050
+    count: 2
+    name: 密勒顿ex
+    
+  - card_id: CSV6C_051
+    count: 2
+    name: 铁臂膀ex
+    
+  - card_id: CSV8C_172
+    count: 1
+    name: 月月熊 赫月ex
+    
+  - card_id: CSV8C_135
+    count: 1
+    name: 吉雉鸡ex
+    
+  - card_id: 151C_151
+    count: 1
+    name: 梦幻ex
+    
+  - card_id: CS5aC_019
+    count: 1
+    name: 雷丘V
+    
+  - card_id: CS4DaC_137
+    count: 1
+    name: 雷公V
+    
+  - card_id: CS5bC_049
+    count: 1
+    name: 霓虹鱼V
+    
+  - card_id: CSV2C_105
+    count: 1
+    name: 怒鹦哥ex
+    
+  - card_id: CS6aC_057
+    count: 1
+    name: 闪电鸟
+    
+  - card_id: CSV7C_109
+    count: 1
+    name: 振翼发
+    
+  - card_id: CS5bC_052
+    count: 1
+    name: 玛纳霏
+    
+  - card_id: CS6.5C_020
+    count: 1
+    name: 光辉甲贺忍蛙
+    
+  - card_id: CSV8C_065
+    count: 1
+    name: 吼叫尾
+    
+  - card_id: CSV1C_060
+    count: 1
+    name: 钥圈儿
+    
+  - card_id: CSV2C_060
+    count: 1
+    name: 飘飘球
+    
+  - card_id: CSV8C_094
+    count: 2
+    name: 愿增猿
+    
+  - card_id: CSV6C_023
+    count: 1
+    name: 洛托姆V
+    
+  # Trainers (33)
+  - card_id: CSV1C_107
+    count: 4
+    name: 电气发生器
+    
+  - card_id: CSV1C_123
+    count: 3
+    name: 派帕
+    
+  - card_id: CSV3C_123
+    count: 1
+    name: 奇树
+    
+  - card_id: CSVH1aC_023
+    count: 3
+    name: 老大的指令
+    
+  - card_id: CSV7C_191
+    count: 2
+    name: 暗码迷的解读
+    
+  - card_id: CS5DC_140
+    count: 1
+    name: 星月
+    
+  - card_id: CSV6C_125
+    count: 1
+    name: 弗图博士的剧本
+    
+  - card_id: CSV1C_043
+    count: 1
+    name: 巢穴球
+    
+  - card_id: CSV1C_112
+    count: 2
+    name: 高级球
+    
+  - card_id: CS5.5C_060
+    count: 1
+    name: 洗翠的沉重球
+    
+  - card_id: CSV8C_183
+    count: 2
+    name: 夜间担架
+    
+  - card_id: CSV1C_109
+    count: 1
+    name: 厉害钓竿
+    
+  - card_id: CSV6C_060
+    count: 2
+    name: 大地容器
+    
+  - card_id: CSV8C_176
+    count: 1
+    name: 秘密箱
+    
+  - card_id: CSV7C_177
+    count: 4
+    name: 友好宝芬
+    
+  - card_id: CSV6C_114
+    count: 2
+    name: 反击捕捉器
+    
+  - card_id: CS5DC_116
+    count: 2
+    name: 交替推车
+    
+  - card_id: CSV6bC_123
+    count: 1
+    name: 放逐吸尘器
+    
+  # Tools (4)
+  - card_id: CSV7C_066
+    count: 1
+    name: 森林封印石
+    
+  - card_id: CSV7C_188
+    count: 1
+    name: 沉重接力棒
+    
+  - card_id: CSV1C_118
+    count: 1
+    name: 勇气护符
+    
+  - card_id: CSV7C_185
+    count: 1
+    name: 紧急滑板
+    
+  # Stadium (1)
+  - card_id: CSV7C_201
+    count: 1
+    name: 重力山
+    
+  # Energy (17)
+  - card_id: CSVE1C_LIG
+    count: 17
+    name: 基本雷能量
+    
+  - card_id: CSNC_024
+    count: 2
+    name: 双重涡轮能量
+
+# Core combo:
+# 1. Miraidon ex on bench: all basic Electric Pokemon attacks +30
+# 2. Electric Generator: attach Lightning from top 5 to Electric Pokemon
+# 3. Iron Hands ex: primary attacker with bench snipe
+
+key_cards:
+  - CSV1C_050  # Miraidon ex - core buff
+  - CSV6C_051  # Iron Hands ex - primary attacker
+  - CSV1C_107  # Electric Generator - energy acceleration
+
+train_safe: true
+priority: high

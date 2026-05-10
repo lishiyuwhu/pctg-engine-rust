@@ -1,0 +1,19 @@
+[package]
+name = "ptcg-py"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Python bindings for PTCG Rust engine"
+
+[dependencies]
+ptcg-core = { path = "../ptcg-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+pyo3 = { workspace = true }
+anyhow = { workspace = true }
+rand = { workspace = true }
+
+[lib]
+name = "ptcg_py"
+crate-type = ["cdylib"]

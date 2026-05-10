@@ -1,0 +1,466 @@
+//! Python bindings for PTCG Rust Engine
+//!
+//! Provides a Gymnasium-compatible RL interface via PyO3.
+
+mod action_codec;
+
+use action_codec::{ActionCodec, MAX_ACTION_SPACE};
+use ptcg_core::{
+    action::{Action, Choices},
+    deck::{MatchConfig, StartingPlayer},
+    engine::Engine,
+    observe::Observation,
+    state::{Phase, PlayerId, SlotRef},
+};
+use pyo3::prelude::*;
+use std::collections::HashMap;
+
+/// Create an engine with default Miraidon vs Charizard/Pidgeot match.
+#[pyfunction]
+fn create_engine(seed: u64) -> PyEngine {
+    PyEngine::new(seed)
+}
+
+/// Create engine for Miraidon deck only (both sides Miraidon for mirror matches).
+#[pyfunction]
+fn create_engine_mirror(seed: u64) -> PyEngine {
+    let config = MatchConfig {
+        player_deck: ptcg_core::deck::templates::miraidon_deck(),
+        opponent_deck: ptcg_core::deck::templates::miraidon_deck(),
+        player_name: "Player".into(),
+        opponent_name: "Opponent".into(),
+        starting_player: StartingPlayer::Random,
+    };
+    let engine = Engine::new(config, seed);
+    PyEngine {
+        engine,
+        codec: ActionCodec::new(MAX_ACTION_SPACE),
+        obs_dim: 0,
+    }
+}
+
+// ── PyEngine ──────────────────────────────────────────────────────────
+
+#[pyclass]
+struct PyEngine {
+    engine: Engine,
+    codec: ActionCodec,
+    /// Cached observation dimension (computed once from to_vector_extended).
+    obs_dim: usize,
+}
+
+impl PyEngine {
+    fn new(seed: u64) -> Self {
+        let config = MatchConfig {
+            player_deck: ptcg_core::deck::templates::miraidon_deck(),
+            opponent_deck: ptcg_core::deck::templates::charizard_pidgeot_deck(),
+            player_name: "Player".into(),
+            opponent_name: "Opponent".into(),
+            starting_player: StartingPlayer::Random,
+        };
+        let engine = Engine::new(config, seed);
+        let obs_dim = Observation::vector_dim_extended();
+        Self {
+            engine,
+            codec: ActionCodec::new(MAX_ACTION_SPACE),
+            obs_dim,
+        }
+    }
+}
+
+#[pymethods]
+impl PyEngine {
+    // ── Lifecycle ─────────────────────────────────────────────────
+
+    /// Reset engine to a fresh game. Uses the same deck configuration.
+    fn reset(&mut self, seed: Option<u64>) {
+        let s = seed.unwrap_or(0);
+        let config = MatchConfig {
+            player_deck: ptcg_core::deck::templates::miraidon_deck(),
+            opponent_deck: ptcg_core::deck::templates::charizard_pidgeot_deck(),
+            player_name: "Player".into(),
+            opponent_name: "Opponent".into(),
+            starting_player: StartingPlayer::Random,
+        };
+        self.engine = Engine::new(config, s);
+    }
+
+    // ── Core RL interface ─────────────────────────────────────────
+
+    /// Execute an action by flat integer index (0..max_action_space).
+    /// Returns (obs_list, reward, done, winner, turn, phase, events_json)
+    fn step(
+        &mut self,
+        player_id: usize,
+        action_index: usize,
+    ) -> PyResult<(Vec<f32>, f32, bool, Option<usize>, u16, String, String)> {
+        let player = PlayerId(player_id);
+        let legal = self.engine.legal_actions(player);
+
+        // Handle empty legal actions (shouldn't happen during normal play)
+        if legal.is_empty() {
+            let obs = self.observe(player_id);
+            return Ok((obs, 0.0, self.engine.state().is_done(), None, 0, "".into(), "[]".into()));
+        }
+
+        let encoded = self.codec.encode(&legal);
+
+        let action = match self.codec.decode(&encoded, action_index) {
+            Some(a) => a,
+            None => {
+                // Invalid action: return negative reward and no state change
+                let obs = self.observe(player_id);
+                return Ok((
+                    obs,
+                    -0.1,
+                    false,
+                    None,
+                    self.engine.state().turn.turn_number,
+                    format!("{:?}", self.engine.state().turn.phase),
+                    r#"[{"error": "invalid_action_index"}]"#.into(),
+                ));
+            }
+        };
+
+        let result = self.engine.step(player, action);
+
+        let obs = self.observe(player_id);
+        let reward = result.reward[player_id];
+        let done = result.done;
+        let winner = result.winner.map(|w| w.0);
+        let turn = self.engine.state().turn.turn_number;
+        let phase = format!("{:?}", self.engine.state().turn.phase);
+
+        let events_json = serde_json::to_string(&result.events).unwrap_or_else(|_| "[]".into());
+
+        Ok((obs, reward, done, winner, turn, phase, events_json))
+    }
+
+    /// Execute an action given as a JSON string.
+    fn step_json(
+        &mut self,
+        player_id: usize,
+        action_json: &str,
+    ) -> PyResult<(Vec<f32>, f32, bool, Option<usize>, u16, String, String)> {
+        let action = Self::parse_action_json(action_json);
+        let player = PlayerId(player_id);
+        let result = self.engine.step(player, action);
+
+        let obs = self.observe(player_id);
+        Ok((
+            obs,
+            result.reward[player_id],
+            result.done,
+            result.winner.map(|w| w.0),
+            self.engine.state().turn.turn_number,
+            format!("{:?}", self.engine.state().turn.phase),
+            serde_json::to_string(&result.events).unwrap_or_else(|_| "[]".into()),
+        ))
+    }
+
+    // ── Observation ───────────────────────────────────────────────
+
+    /// Get extended observation vector for a player (float list).
+    fn observe(&self, player_id: usize) -> Vec<f32> {
+        let player = PlayerId(player_id);
+        let obs = Observation::from_state(self.engine.state(), player);
+        obs.to_vector_extended()
+    }
+
+    /// Get observation as a structured Python dict (JSON string).
+    fn observe_dict(&self, player_id: usize) -> String {
+        let player = PlayerId(player_id);
+        let obs = Observation::from_state(self.engine.state(), player);
+        serde_json::to_string(&obs).unwrap_or_else(|_| "{}".into())
+    }
+
+    /// Dimension of the extended observation vector.
+    fn observation_dim(&self) -> usize {
+        self.obs_dim
+    }
+
+    // ── Action space ──────────────────────────────────────────────
+
+    /// Get (legal_indices: Vec<usize>, action_mask: Vec<bool>).
+    fn legal_actions_encoded(&self, player_id: usize) -> (Vec<usize>, Vec<bool>) {
+        let player = PlayerId(player_id);
+        let legal = self.engine.legal_actions(player);
+        let encoded = self.codec.encode(&legal);
+
+        let indices: Vec<usize> = (0..encoded.actions.len()).collect();
+        (indices, encoded.mask)
+    }
+
+    /// Get legal actions as a list of JSON dict strings.
+    fn legal_actions_dicts(&self, player_id: usize) -> Vec<String> {
+        let player = PlayerId(player_id);
+        let legal = self.engine.legal_actions(player);
+
+        legal
+            .iter()
+            .map(|a| {
+                let dict = self.codec.action_to_dict(a);
+                serde_json::to_string(&dict).unwrap_or_else(|_| "{}".into())
+            })
+            .collect()
+    }
+
+    /// Get action mask as boolean list.
+    fn action_mask(&self, player_id: usize) -> Vec<bool> {
+        let player = PlayerId(player_id);
+        let legal = self.engine.legal_actions(player);
+        self.codec.encode(&legal).mask
+    }
+
+    /// Number of legal actions for a player.
+    fn num_legal_actions(&self, player_id: usize) -> usize {
+        let player = PlayerId(player_id);
+        self.engine.legal_actions(player).len()
+    }
+
+    /// Max action space size.
+    fn action_space_size(&self) -> usize {
+        MAX_ACTION_SPACE
+    }
+
+    // ── State queries ─────────────────────────────────────────────
+
+    fn is_done(&self) -> bool {
+        self.engine.state().is_done()
+    }
+
+    fn winner(&self) -> Option<usize> {
+        self.engine.state().winner.map(|w| w.0)
+    }
+
+    fn turn(&self) -> u16 {
+        self.engine.state().turn.turn_number
+    }
+
+    fn phase(&self) -> String {
+        format!("{:?}", self.engine.state().turn.phase)
+    }
+
+    /// Which players can currently act? (1 or 2 during setup/mulligan).
+    fn acting_players(&self) -> Vec<usize> {
+        if self.engine.state().is_done() {
+            return vec![];
+        }
+        let is_multiactor = matches!(
+            self.engine.state().turn.phase,
+            Phase::Setup | Phase::Mulligan
+        );
+        if is_multiactor {
+            vec![0, 1]
+        } else {
+            vec![self.engine.state().turn.active_player.0]
+        }
+    }
+
+    fn active_player(&self) -> usize {
+        self.engine.state().turn.active_player.0
+    }
+
+    fn is_setup_phase(&self) -> bool {
+        matches!(
+            self.engine.state().turn.phase,
+            Phase::Setup | Phase::Mulligan
+        )
+    }
+
+    // ── Rendering ─────────────────────────────────────────────────
+
+    fn render_text(&self) -> String {
+        format!("{}", self.engine)
+    }
+}
+
+// ── JSON Action Parser ────────────────────────────────────────────────
+
+impl PyEngine {
+    fn parse_action_json(json: &str) -> Action {
+        // Try to parse as structured JSON dict
+        if let Ok(map) = serde_json::from_str::<HashMap<String, serde_json::Value>>(json) {
+            let action_type = map
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Pass");
+
+            match action_type {
+                "EndTurn" => return Action::EndTurn,
+                "Pass" => return Action::Pass,
+                "MulliganDraw" => {
+                    let draw = map.get("draw").and_then(|v| v.as_bool()).unwrap_or(true);
+                    return Action::MulliganDraw { draw };
+                }
+                "SetupChooseActive" => {
+                    if let Some(card) = map.get("card_id").and_then(|v| v.as_u64()) {
+                        return Action::SetupChooseActive {
+                            card: ptcg_core::state::CardInstanceId(card as u32),
+                        };
+                    }
+                }
+                "SetupBenchBasics" => {
+                    if let Some(cards_arr) = map.get("card_ids").and_then(|v| v.as_array()) {
+                        let cards: Vec<ptcg_core::state::CardInstanceId> = cards_arr
+                            .iter()
+                            .filter_map(|v| v.as_u64().map(|n| ptcg_core::state::CardInstanceId(n as u32)))
+                            .collect();
+                        return Action::SetupBenchBasics { cards };
+                    }
+                }
+                "PlayBasicToBench" => {
+                    if let Some(card) = map.get("card_id").and_then(|v| v.as_u64()) {
+                        return Action::PlayBasicToBench {
+                            card: ptcg_core::state::CardInstanceId(card as u32),
+                        };
+                    }
+                }
+                "Evolve" => {
+                    if let (Some(card), Some(target)) = (
+                        map.get("card_id").and_then(|v| v.as_u64()),
+                        map.get("target").and_then(|v| v.as_str()),
+                    ) {
+                        return Action::Evolve {
+                            card: ptcg_core::state::CardInstanceId(card as u32),
+                            target: parse_slot_ref(target),
+                        };
+                    }
+                }
+                "AttachEnergy" => {
+                    if let (Some(card), Some(target)) = (
+                        map.get("card_id").and_then(|v| v.as_u64()),
+                        map.get("target").and_then(|v| v.as_str()),
+                    ) {
+                        return Action::AttachEnergy {
+                            card: ptcg_core::state::CardInstanceId(card as u32),
+                            target: parse_slot_ref(target),
+                        };
+                    }
+                }
+                "AttachTool" => {
+                    if let (Some(card), Some(target)) = (
+                        map.get("card_id").and_then(|v| v.as_u64()),
+                        map.get("target").and_then(|v| v.as_str()),
+                    ) {
+                        return Action::AttachTool {
+                            card: ptcg_core::state::CardInstanceId(card as u32),
+                            target: parse_slot_ref(target),
+                        };
+                    }
+                }
+                "PlayTrainer" => {
+                    if let Some(card) = map.get("card_id").and_then(|v| v.as_u64()) {
+                        return Action::PlayTrainer {
+                            card: ptcg_core::state::CardInstanceId(card as u32),
+                            choices: parse_choices(&map),
+                        };
+                    }
+                }
+                "PlayStadium" => {
+                    if let Some(card) = map.get("card_id").and_then(|v| v.as_u64()) {
+                        return Action::PlayStadium {
+                            card: ptcg_core::state::CardInstanceId(card as u32),
+                            choices: parse_choices(&map),
+                        };
+                    }
+                }
+                "UseAbility" => {
+                    if let (Some(source), Some(ability_index)) = (
+                        map.get("source").and_then(|v| v.as_str()),
+                        map.get("ability_index").and_then(|v| v.as_u64()),
+                    ) {
+                        return Action::UseAbility {
+                            source: parse_slot_ref(source),
+                            ability_index: ability_index as u8,
+                            choices: parse_choices(&map),
+                        };
+                    }
+                }
+                "Retreat" => {
+                    if let Some(target) = map.get("target").and_then(|v| v.as_str()) {
+                        let discard = if let Some(arr) = map.get("discard").and_then(|v| v.as_array())
+                        {
+                            arr.iter()
+                                .filter_map(|v| {
+                                    v.as_u64().map(|n| ptcg_core::state::CardInstanceId(n as u32))
+                                })
+                                .collect()
+                        } else {
+                            vec![]
+                        };
+                        return Action::Retreat {
+                            target: parse_slot_ref(target),
+                            discard,
+                        };
+                    }
+                }
+                "Attack" => {
+                    let attack_index = map
+                        .get("attack_index")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0) as u8;
+                    return Action::Attack {
+                        attack_index,
+                        choices: parse_choices(&map),
+                    };
+                }
+                _ => {}
+            }
+        }
+
+        // Fallback: try as simple string (e.g. "EndTurn", "Pass")
+        match json.trim_matches('"') {
+            "EndTurn" => Action::EndTurn,
+            "Pass" => Action::Pass,
+            _ => Action::Pass,
+        }
+    }
+}
+
+fn parse_slot_ref(s: &str) -> SlotRef {
+    if s == "active" {
+        return SlotRef::Active;
+    }
+    if let Some(idx_str) = s.strip_prefix("bench_") {
+        if let Ok(idx) = idx_str.parse::<usize>() {
+            return SlotRef::Bench(idx);
+        }
+    }
+    SlotRef::Active
+}
+
+fn parse_choices(map: &HashMap<String, serde_json::Value>) -> Choices {
+    let mut choices = Choices::new();
+
+    if let Some(arr) = map.get("selected_cards").and_then(|v| v.as_array()) {
+        choices.selected_cards = arr
+            .iter()
+            .filter_map(|v| v.as_u64().map(|n| ptcg_core::state::CardInstanceId(n as u32)))
+            .collect();
+    }
+
+    if let Some(arr) = map.get("selected_slots").and_then(|v| v.as_array()) {
+        choices.selected_slots = arr.iter().filter_map(|v| v.as_str().map(parse_slot_ref)).collect();
+    }
+
+    if let Some(n) = map.get("selected_count").and_then(|v| v.as_u64()) {
+        choices.selected_count = Some(n as usize);
+    }
+
+    if let Some(n) = map.get("mode").and_then(|v| v.as_u64()) {
+        choices.mode = Some(n as u8);
+    }
+
+    choices
+}
+
+// ── Python Module ─────────────────────────────────────────────────────
+
+#[pymodule]
+fn ptcg_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(create_engine, m)?)?;
+    m.add_function(wrap_pyfunction!(create_engine_mirror, m)?)?;
+    m.add_class::<PyEngine>()?;
+    Ok(())
+}

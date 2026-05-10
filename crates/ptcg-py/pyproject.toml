@@ -1,0 +1,20 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "ptcg-gym"
+version = "0.1.0"
+description = "Pokemon TCG Gymnasium environment powered by Rust engine"
+requires-python = ">=3.10"
+dependencies = [
+    "gymnasium>=0.29",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+sb3 = ["stable-baselines3>=2.0"]
+dev = ["pytest>=7.0", "stable-baselines3>=2.0"]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
