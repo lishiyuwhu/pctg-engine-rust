@@ -18,6 +18,9 @@ dist/
 # Claude Code
 .claude/
 
+# Reference source (Godot/GDScript original)
+/PtcgDeckAgent/
+
 # OS
 .DS_Store
 Thumbs.db
