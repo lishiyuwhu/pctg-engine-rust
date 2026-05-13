@@ -9,6 +9,31 @@ pub struct EffectResult {
     pub events: Vec<crate::engine::Event>,
 }
 
+/// Result of resolving an attack with effects.
+#[derive(Debug, Clone)]
+pub struct AttackResult {
+    /// Base damage to the defending active Pokemon
+    pub damage: u16,
+    /// Whether the defending active Pokemon is KO'd
+    pub ko: bool,
+    /// Additional bench damage: (target_slot, damage_amount)
+    pub bench_damage: Vec<(SlotRef, u16)>,
+    /// Events generated during attack resolution
+    pub events: Vec<crate::engine::Event>,
+    /// Whether this attack locks itself next turn
+    pub self_lock: bool,
+}
+
+impl AttackResult {
+    pub fn new(damage: u16) -> Self {
+        Self { damage, ko: false, bench_damage: vec![], events: vec![], self_lock: false }
+    }
+
+    pub fn with_ko(damage: u16) -> Self {
+        Self { damage, ko: true, bench_damage: vec![], events: vec![], self_lock: false }
+    }
+}
+
 impl EffectResult {
     pub fn new() -> Self {
         Self { events: Vec::new() }

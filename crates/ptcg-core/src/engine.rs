@@ -860,81 +860,100 @@ impl Engine {
         attack_index: u8,
         choices: &Choices,
     ) -> Vec<Event> {
-        let player_state = &self.state.players[player.0];
         let opponent = player.opponent();
-        let opponent_state = &self.state.players[opponent.0];
-
-        // Get attacker and defender
         let attacker_slot = SlotRef::Active;
         let defender_slot = SlotRef::Active;
 
-        // Calculate damage
-        let base_damage = if let Some(active) = &player_state.active {
-            if let Some(card_def) = active.top_card().and_then(|id| self.state.get_card_def(id)) {
-                if (attack_index as usize) < card_def.attacks.len() {
-                    card_def.attacks[attack_index as usize].damage
-                } else {
-                    0
-                }
-            } else {
-                0
-            }
-        } else {
-            0
+        // Read attack info before mutable borrow
+        let (base_damage, effect_id) = {
+            let player_state = &self.state.players[player.0];
+            if let Some(active) = &player_state.active {
+                if let Some(card_def) = active.top_card().and_then(|id| self.state.get_card_def(id)) {
+                    if (attack_index as usize) < card_def.attacks.len() {
+                        let atk = &card_def.attacks[attack_index as usize];
+                        (atk.damage, atk.effect_id.clone())
+                    } else { (0, None) }
+                } else { (0, None) }
+            } else { (0, None) }
         };
 
+        self.state.turn.attack_locked = true;
+        let mut events = Vec::new();
+
+        // Route through effect dispatch if there's an effect_id
+        if let Some(ref eid) = effect_id {
+            match super::effects::dispatch_attack(
+                &mut self.state, player, opponent, eid, base_damage, choices, &mut self.rng,
+            ) {
+                Ok(result) => {
+                    // Apply self-lock if the effect requests it
+                    if result.self_lock {
+                        // Store lock: this attack index cannot be used next turn
+                        if let Some(active) = self.state.players[player.0].active.as_mut() {
+                            active.status.cannot_retreat = true; // reuse for attack lock signal
+                        }
+                    }
+
+                    // Process KO for active
+                    if result.ko {
+                        events.extend(self.process_ko(opponent, defender_slot, player));
+                    }
+                    // Process KO for bench targets
+                    for (target, dmg) in &result.bench_damage {
+                        let defender_max_hp = self.state.players[opponent.0]
+                            .get_slot(*target)
+                            .and_then(|s| s.top_card())
+                            .and_then(|id| self.state.get_card_def(id))
+                            .and_then(|def| def.hp);
+                        let slot_dmg = self.state.players[opponent.0]
+                            .get_slot_mut(*target)
+                            .map(|s| { s.damage += dmg; s.damage })
+                            .unwrap_or(0);
+                        if let Some(hp) = defender_max_hp {
+                            if slot_dmg >= hp {
+                                events.extend(self.process_ko(opponent, *target, player));
+                            }
+                        }
+                        events.push(Event::Damage {
+                            target_player: opponent, target_slot: *target,
+                            damage: *dmg, ko: slot_dmg >= defender_max_hp.unwrap_or(9999),
+                        });
+                    }
+
+                    events.push(Event::Attack { attacker: player, defender: opponent, attack_index, damage: result.damage });
+                    events.extend(result.events);
+                    return events;
+                }
+                Err(_) => {} // Fall through to plain damage path on error
+            }
+        }
+
+        // Plain damage path (no effect_id or dispatch error)
         let damage = self.damage_calculator.calculate_damage(
-            &self.state,
-            player,
-            attacker_slot,
-            opponent,
-            defender_slot,
-            base_damage,
+            &self.state, player, attacker_slot, opponent, defender_slot, base_damage,
         );
 
-        // Get defender's card_id and max_hp before mutable borrow
-        let defender_card_id = opponent_state.active.as_ref().and_then(|s| s.top_card());
-        let defender_max_hp = defender_card_id
+        let defender_max_hp = self.state.players[opponent.0]
+            .active.as_ref()
+            .and_then(|s| s.top_card())
             .and_then(|id| self.state.get_card_def(id))
             .and_then(|def| def.hp);
 
-        // Apply damage
         let ko = {
             let opponent_state = &mut self.state.players[opponent.0];
             if let Some(slot) = opponent_state.active.as_mut() {
                 slot.damage += damage;
-
-                // Check KO
-                if let Some(max_hp) = defender_max_hp {
-                    slot.damage >= max_hp
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
+                defender_max_hp.map(|hp| slot.damage >= hp).unwrap_or(false)
+            } else { false }
         };
 
-        // Lock attack
-        self.state.turn.attack_locked = true;
-
-        // Process KO if applicable
-        let mut events = Vec::new();
         if ko {
             events.extend(self.process_ko(opponent, defender_slot, player));
         }
 
-        events.push(Event::Attack {
-            attacker: player,
-            defender: opponent,
-            attack_index,
-            damage,
-        });
+        events.push(Event::Attack { attacker: player, defender: opponent, attack_index, damage });
         events.push(Event::Damage {
-            target_player: opponent,
-            target_slot: defender_slot,
-            damage,
-            ko,
+            target_player: opponent, target_slot: defender_slot, damage, ko,
         });
 
         events

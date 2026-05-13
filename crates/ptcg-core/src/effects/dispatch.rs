@@ -71,6 +71,38 @@ pub fn dispatch_trainer(
     }
 }
 
+pub fn dispatch_attack(
+    state: &mut crate::state::GameState,
+    attacker: crate::state::PlayerId,
+    defender: crate::state::PlayerId,
+    effect_id: &str,
+    base_damage: u16,
+    choices: &crate::action::Choices,
+    rng: &mut crate::rng::GameRng,
+) -> Result<super::AttackResult> {
+    match effect_id {
+        "attack_bench_snipe_30" => {
+            super::pokemon::attack_double_impact(state, attacker, defender, base_damage, choices)
+        }
+        "attack_prize_count_damage" => {
+            super::pokemon::attack_scorching_darkness(state, attacker, defender, base_damage)
+        }
+        "attack_self_lock_next_turn" => {
+            super::pokemon::attack_photon_blaster(state, defender, base_damage)
+        }
+        "attack_bench_snipe_double_90" => {
+            super::pokemon::attack_moonlight_shuriken(state, attacker, defender, base_damage, choices)
+        }
+        "attack_optional_discard_stadium" => {
+            super::pokemon::attack_gale_winds(state, attacker, defender, base_damage, choices)
+        }
+        "attack_prize_condition_damage" => {
+            super::pokemon::attack_combustion_blast(state, attacker, defender, base_damage)
+        }
+        _ => Ok(super::AttackResult::new(base_damage)),
+    }
+}
+
 pub fn dispatch_stadium(
     state: &mut GameState,
     player: PlayerId,

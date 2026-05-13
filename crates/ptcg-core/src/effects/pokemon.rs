@@ -153,97 +153,163 @@ pub fn ability_awaken_is_active(state: &GameState, player: PlayerId) -> bool {
     false
 }
 
-/// Iron Hands ex - Double Impact attack
-/// 120 damage, does 30 to 1 benched Pokemon
+/// Iron Hands ex - Double Impact: 120 main damage + 30 bench snipe.
 pub fn attack_double_impact(
     state: &mut GameState,
     attacker: PlayerId,
-    attacker_slot: SlotRef,
     defender: PlayerId,
-    defender_slot: SlotRef,
+    base_damage: u16,
     choices: &crate::action::Choices,
-) -> Result<EffectResult> {
-    use crate::damage::DamageCalculator;
-
-    let calculator = DamageCalculator::new();
+) -> Result<super::AttackResult> {
+    let main_damage = base_damage; // 120 passed in
+    let mut bench_damage = Vec::new();
     let mut events = Vec::new();
 
-    // Calculate main damage
-    let main_damage =
-        calculator.calculate_damage(state, attacker, attacker_slot, defender, defender_slot, 120);
-
-    // Apply damage to active
-    let ko = super::apply_damage(state, defender, defender_slot, main_damage);
+    let ko = super::apply_damage(state, defender, SlotRef::Active, main_damage);
     events.push(crate::engine::Event::Damage {
-        target_player: defender,
-        target_slot: defender_slot,
-        damage: main_damage,
-        ko,
+        target_player: defender, target_slot: SlotRef::Active,
+        damage: main_damage, ko,
     });
 
-    // Apply 30 damage to benched Pokemon if selected
     if let Some(target_slot) = choices.selected_slots.first() {
-        let bench_damage = calculator.calculate_bench_damage(
-            state,
-            attacker,
-            attacker_slot,
-            defender,
-            *target_slot,
-            30,
-        );
-        let bench_ko = super::apply_damage(state, defender, *target_slot, bench_damage);
+        bench_damage.push((*target_slot, 30u16));
+        let bench_ko = super::apply_damage(state, defender, *target_slot, 30);
         events.push(crate::engine::Event::Damage {
-            target_player: defender,
-            target_slot: *target_slot,
-            damage: bench_damage,
-            ko: bench_ko,
+            target_player: defender, target_slot: *target_slot,
+            damage: 30, ko: bench_ko,
         });
     }
 
-    Ok(
-        EffectResult::new().with_event(crate::engine::Event::Attack {
-            attacker,
-            defender,
-            attack_index: 0,
-            damage: main_damage,
-        }),
-    )
+    Ok(super::AttackResult { damage: main_damage, ko, bench_damage, events, self_lock: false })
 }
 
-/// Charizard ex - Scorching Darkness attack
-/// 180 + 30 per opponent's remaining prize cards
+/// Charizard ex - Scorching Darkness: 180 + 30 per opponent's remaining prize cards.
 pub fn attack_scorching_darkness(
     state: &mut GameState,
     attacker: PlayerId,
-    attacker_slot: SlotRef,
     defender: PlayerId,
-    defender_slot: SlotRef,
-) -> Result<EffectResult> {
+    base_damage: u16,
+) -> Result<super::AttackResult> {
+    let opponent_prizes = state.players[defender.0].prizes.len() as u16;
+    let damage = base_damage + opponent_prizes * 30;
+
+    let ko = super::apply_damage(state, defender, SlotRef::Active, damage);
+    let events = vec![crate::engine::Event::Damage {
+        target_player: defender, target_slot: SlotRef::Active, damage, ko,
+    }];
+
+    Ok(super::AttackResult { damage, ko, bench_damage: vec![], events, self_lock: false })
+}
+
+/// Miraidon ex - Photon Blaster: 220 damage, self-lock this attack next turn.
+pub fn attack_photon_blaster(
+    state: &mut GameState,
+    defender: PlayerId,
+    base_damage: u16,
+) -> Result<super::AttackResult> {
+    let damage = base_damage; // 220
+    let ko = super::apply_damage(state, defender, SlotRef::Active, damage);
+    let events = vec![crate::engine::Event::Damage {
+        target_player: defender, target_slot: SlotRef::Active, damage, ko,
+    }];
+
+    Ok(super::AttackResult { damage, ko, bench_damage: vec![], events, self_lock: true })
+}
+
+/// Radiant Greninja - Moonlight Shuriken: 90 to active + 90 to up to 2 opponent Pokemon.
+pub fn attack_moonlight_shuriken(
+    state: &mut GameState,
+    attacker: PlayerId,
+    defender: PlayerId,
+    base_damage: u16,
+    choices: &crate::action::Choices,
+) -> Result<super::AttackResult> {
     use crate::damage::DamageCalculator;
+    let calc = DamageCalculator::new();
+    let main_damage = base_damage; // 90
+    let mut bench_damage = Vec::new();
+    let mut events = Vec::new();
 
-    let calculator = DamageCalculator::new();
-    let opponent = state.players[defender.0].prizes.len();
-    let bonus = (6 - opponent) * 30; // 6 prizes total, bonus per taken prize
+    // Hit active
+    let ko = super::apply_damage(state, defender, SlotRef::Active, main_damage);
+    events.push(crate::engine::Event::Damage {
+        target_player: defender, target_slot: SlotRef::Active, damage: main_damage, ko,
+    });
 
-    let total_damage = calculator.calculate_damage(
-        state,
-        attacker,
-        attacker_slot,
-        defender,
-        defender_slot,
-        180 + bonus as u16,
-    );
+    // Hit up to 2 bench targets
+    for (i, &target) in choices.selected_slots.iter().take(2).enumerate() {
+        let bench_dmg = calc.calculate_bench_damage(
+            state, attacker, SlotRef::Active, defender, target, 90,
+        );
+        bench_damage.push((target, bench_dmg));
+        let bench_ko = super::apply_damage(state, defender, target, bench_dmg);
+        events.push(crate::engine::Event::Damage {
+            target_player: defender, target_slot: target, damage: bench_dmg, ko: bench_ko,
+        });
+    }
 
-    let ko = super::apply_damage(state, defender, defender_slot, total_damage);
+    Ok(super::AttackResult { damage: main_damage, ko, bench_damage, events, self_lock: false })
+}
 
-    Ok(
-        EffectResult::new().with_event(crate::engine::Event::Damage {
-            target_player: defender,
-            target_slot: defender_slot,
-            damage: total_damage,
-            ko,
-        }),
-    )
+/// Pidgeot ex - Gale Winds: 120 damage + optional discard stadium for 120 bench snipe.
+pub fn attack_gale_winds(
+    state: &mut GameState,
+    attacker: PlayerId,
+    defender: PlayerId,
+    base_damage: u16,
+    choices: &crate::action::Choices,
+) -> Result<super::AttackResult> {
+    let main_damage = base_damage; // 120
+    let mut bench_damage = Vec::new();
+    let mut events = Vec::new();
+
+    // Main damage to active
+    let ko = super::apply_damage(state, defender, SlotRef::Active, main_damage);
+    events.push(crate::engine::Event::Damage {
+        target_player: defender, target_slot: SlotRef::Active, damage: main_damage, ko,
+    });
+
+    // Optional: discard a Stadium from hand to deal 120 to bench
+    if choices.mode == Some(1) && !choices.selected_cards.is_empty() {
+        let stadium_card = choices.selected_cards[0];
+        let player_state = &mut state.players[attacker.0];
+        if let Some(pos) = player_state.hand.iter().position(|&id| id == stadium_card) {
+            player_state.hand.remove(pos);
+            player_state.discard.push(stadium_card);
+        }
+
+        if let Some(&target) = choices.selected_slots.first() {
+            bench_damage.push((target, 120u16));
+            let bench_ko = super::apply_damage(state, defender, target, 120);
+            events.push(crate::engine::Event::Damage {
+                target_player: defender, target_slot: target, damage: 120, ko: bench_ko,
+            });
+        }
+    }
+
+    Ok(super::AttackResult { damage: main_damage, ko, bench_damage, events, self_lock: false })
+}
+
+/// Radiant Charizard - Combustion Blast: 250 damage, only usable when prizes <= 1.
+pub fn attack_combustion_blast(
+    state: &mut GameState,
+    attacker: PlayerId,
+    defender: PlayerId,
+    base_damage: u16,
+) -> Result<super::AttackResult> {
+    let prizes_left = state.players[attacker.0].prizes.len();
+    if prizes_left > 1 {
+        // Attack condition not met: no effect (should be filtered by legal_actions)
+        return Ok(super::AttackResult::new(0));
+    }
+
+    let damage = base_damage; // 250
+    let ko = super::apply_damage(state, defender, SlotRef::Active, damage);
+    let events = vec![crate::engine::Event::Damage {
+        target_player: defender, target_slot: SlotRef::Active, damage, ko,
+    }];
+
+    Ok(super::AttackResult { damage, ko, bench_damage: vec![], events, self_lock: false })
 }
 
 /// Forest Seal Stone — Star Alchemy: search deck for any 1 card.

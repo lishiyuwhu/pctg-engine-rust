@@ -489,6 +489,9 @@ fn run_batch(n_games: usize, seed: u64, threads: Option<usize>) -> PyResult<Stri
         };
         let mut engine = Engine::new(config, game_seed);
         engine.record_replay = false;
+        let miraidon = ptcg_core::strategy::MiraidonStrategy;
+        let charizard = ptcg_core::strategy::CharizardStrategy;
+        use ptcg_core::strategy::DeckStrategy;
         let mut steps = 0usize;
         let max_steps = 2000;
 
@@ -503,14 +506,14 @@ fn run_batch(n_games: usize, seed: u64, threads: Option<usize>) -> PyResult<Stri
                 vec![engine.state().turn.active_player]
             };
             for &p in &players {
-                if engine.state().is_done() {
-                    break;
-                }
+                if engine.state().is_done() { break; }
                 let actions = engine.legal_actions(p);
-                if actions.is_empty() {
-                    continue;
-                }
-                let idx = (game_seed.wrapping_add(steps as u64) as usize) % actions.len();
+                if actions.is_empty() { continue; }
+                let idx = if p.0 == 0 {
+                    miraidon.select_action(&actions, engine.state(), p).unwrap_or(0)
+                } else {
+                    charizard.select_action(&actions, engine.state(), p).unwrap_or(0)
+                };
                 engine.step(p, actions[idx].clone());
                 steps += 1;
             }

@@ -28,6 +28,7 @@ pub mod observe;
 pub mod replay;
 pub mod rng;
 pub mod error;
+pub mod strategy;
 
 pub use card::{CardDef, CardDefId, CardType, EnergyType, Mechanic};
 pub use deck::{Deck, DeckError, MatchConfig};
