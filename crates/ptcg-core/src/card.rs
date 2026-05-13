@@ -1081,6 +1081,101 @@ pub mod presets {
             retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![], provides_energy: None, damage_modifier: None, retreat_modifier: None,
         });
 
+        // ── Gouging Fire Ancient deck ──
+        registry.register(CardDef {
+            id: CardDefId::new("CSV7C", "051"), name: "Gouging Fire ex".into(), name_en: "Gouging Fire ex".into(),
+            set_code: "CSV7C".into(), card_type: CardType::Pokemon, stage: Some(Stage::Basic),
+            hp: Some(230), energy_type: Some(EnergyType::Fire), weakness: Some(TypeMultiplier { energy_type: EnergyType::Water, multiplier: 2 }),
+            resistance: None, retreat_cost: Some(2), mechanic: None,
+            attacks: vec![
+                Attack { name: "Burning Overrun".into(), cost: vec![EnergyType::Fire, EnergyType::Colorless], damage: 60, text: "".into(), effect_id: None },
+                Attack { name: "Magma Blast".into(), cost: vec![EnergyType::Fire, EnergyType::Fire, EnergyType::Colorless, EnergyType::Colorless], damage: 220, text: "Discard 1 Energy".into(), effect_id: Some("attack_discard_energy_from_self".into()) },
+            ], abilities: vec![], provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CS4DaC", "056"), name: "Entei V".into(), name_en: "Entei V".into(),
+            set_code: "CS4DaC".into(), card_type: CardType::Pokemon, stage: Some(Stage::Basic),
+            hp: Some(220), energy_type: Some(EnergyType::Fire), weakness: Some(TypeMultiplier { energy_type: EnergyType::Water, multiplier: 2 }),
+            resistance: None, retreat_cost: Some(2), mechanic: Some(Mechanic::V),
+            attacks: vec![
+                Attack { name: "Burning Arrow".into(), cost: vec![EnergyType::Fire, EnergyType::Colorless, EnergyType::Colorless], damage: 160, text: "".into(), effect_id: None },
+            ], abilities: vec![
+                Ability { name: "Burst Roar".into(), effect_id: "ability_burst_roar".into(), text: "Attach a Fire Energy from discard".into() },
+            ], provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSV6C", "096"), name: "Roaring Moon ex".into(), name_en: "Roaring Moon ex".into(),
+            set_code: "CSV6C".into(), card_type: CardType::Pokemon, stage: Some(Stage::Basic),
+            hp: Some(230), energy_type: Some(EnergyType::Darkness), weakness: Some(TypeMultiplier { energy_type: EnergyType::Grass, multiplier: 2 }),
+            resistance: None, retreat_cost: Some(2), mechanic: None,
+            attacks: vec![
+                Attack { name: "Calamity Storm".into(), cost: vec![EnergyType::Darkness, EnergyType::Darkness, EnergyType::Colorless], damage: 200, text: "".into(), effect_id: Some("attack_discard_stadium_bonus".into()) },
+            ], abilities: vec![], provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CS5aC", "006"), name: "Moltres".into(), name_en: "Moltres".into(),
+            set_code: "CS5aC".into(), card_type: CardType::Pokemon, stage: Some(Stage::Basic),
+            hp: Some(120), energy_type: Some(EnergyType::Fire), weakness: Some(TypeMultiplier { energy_type: EnergyType::Lightning, multiplier: 2 }),
+            resistance: Some(TypeMultiplier { energy_type: EnergyType::Fighting, multiplier: -30 }), retreat_cost: Some(1), mechanic: None,
+            attacks: vec![
+                Attack { name: "Flare".into(), cost: vec![EnergyType::Fire, EnergyType::Colorless], damage: 50, text: "".into(), effect_id: None },
+            ], abilities: vec![], provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CS6.5C", "012"), name: "Delphox V".into(), name_en: "Delphox V".into(),
+            set_code: "CS6.5C".into(), card_type: CardType::Pokemon, stage: Some(Stage::Basic),
+            hp: Some(210), energy_type: Some(EnergyType::Fire), weakness: Some(TypeMultiplier { energy_type: EnergyType::Water, multiplier: 2 }),
+            resistance: None, retreat_cost: Some(2), mechanic: Some(Mechanic::V),
+            attacks: vec![
+                Attack { name: "Magic Fire".into(), cost: vec![EnergyType::Fire, EnergyType::Colorless, EnergyType::Colorless], damage: 160, text: "".into(), effect_id: Some("attack_delphox_v_magic_fire".into()) },
+            ], abilities: vec![], provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        // Trainers
+        registry.register(CardDef {
+            id: CardDefId::new("CSV6C", "121"), name: "Professor Sada's Vitality".into(), name_en: "Professor Sada's Vitality".into(),
+            set_code: "CSV6C".into(), card_type: CardType::Supporter, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSV1C", "121"), name: "Professor's Research".into(), name_en: "Professor's Research".into(),
+            set_code: "CSV1C".into(), card_type: CardType::Supporter, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CS5DC", "126"), name: "Dark Patch".into(), name_en: "Dark Patch".into(),
+            set_code: "CS5DC".into(), card_type: CardType::Item, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSVH1aC", "008"), name: "Energy Switch".into(), name_en: "Energy Switch".into(),
+            set_code: "CSVH1aC".into(), card_type: CardType::Item, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSV1C", "111"), name: "Pal Pad".into(), name_en: "Pal Pad".into(),
+            set_code: "CSV1C".into(), card_type: CardType::Item, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        // Special Energy
+        registry.register(CardDef {
+            id: CardDefId::new("CSV4C", "129"), name: "Jet Energy".into(), name_en: "Jet Energy".into(),
+            set_code: "CSV4C".into(), card_type: CardType::SpecialEnergy, stage: None, hp: None, energy_type: Some(EnergyType::Colorless),
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: Some(vec![EnergyType::Colorless]), damage_modifier: None, retreat_modifier: Some(1),
+        });
+        // Stadium
+        registry.register(CardDef {
+            id: CardDefId::new("CS5DC", "152"), name: "Magma Basin".into(), name_en: "Magma Basin".into(),
+            set_code: "CS5DC".into(), card_type: CardType::Stadium, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+
         registry
     }
 }

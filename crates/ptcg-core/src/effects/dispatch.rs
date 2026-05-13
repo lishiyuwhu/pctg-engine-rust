@@ -18,6 +18,7 @@ pub fn dispatch_ability(
         "ability_awaken" => Ok(EffectResult::new()),
         "ability_concealed_cards" => super::pokemon::ability_concealed_cards(state, player, source),
         "ability_restart" => super::pokemon::ability_restart(state, player, source),
+        "ability_burst_roar" => super::pokemon::ability_burst_roar(state, player, source),
         "tool_star_alchemy" => super::pokemon::ability_star_alchemy(state, player, source),
         _ => Err(crate::error::EngineError::InvalidAction(format!(
             "Unknown ability effect: {}",
@@ -98,6 +99,12 @@ pub fn dispatch_attack(
         }
         "attack_prize_condition_damage" => {
             super::pokemon::attack_combustion_blast(state, attacker, defender, base_damage)
+        }
+        "attack_discard_energy_from_self" => {
+            super::pokemon::attack_discard_energy_from_self(state, attacker, defender, base_damage)
+        }
+        "attack_discard_stadium_bonus" => {
+            super::pokemon::attack_discard_stadium_bonus(state, attacker, defender, base_damage, choices)
         }
         _ => Ok(super::AttackResult::new(base_damage)),
     }

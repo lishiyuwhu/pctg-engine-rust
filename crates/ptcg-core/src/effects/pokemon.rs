@@ -377,3 +377,60 @@ pub fn ability_restart(
     }
     Ok(EffectResult::new())
 }
+
+/// Entei V - Burst Roar: attach 1 Fire Energy from discard to this Pokemon.
+pub fn ability_burst_roar(
+    state: &mut crate::state::GameState,
+    player: crate::state::PlayerId,
+    source: crate::state::SlotRef,
+) -> Result<EffectResult> {
+    let player_state = &state.players[player.0];
+    let fire_energy = player_state.discard.iter().position(|&id| {
+        state.get_card_def(id).map(|d| d.energy_type == Some(EnergyType::Fire)).unwrap_or(false)
+    });
+    if let Some(pos) = fire_energy {
+        let energy_id = player_state.discard[pos];
+        let player_state = &mut state.players[player.0];
+        player_state.discard.remove(pos);
+        if let Some(slot) = player_state.get_slot_mut(source) {
+            slot.energies.push(energy_id);
+        }
+    }
+    Ok(EffectResult::new())
+}
+
+/// Gouging Fire ex - Magma Blast: deal damage, then discard 1 energy from self.
+pub fn attack_discard_energy_from_self(
+    state: &mut GameState,
+    attacker: PlayerId,
+    defender: PlayerId,
+    base_damage: u16,
+) -> Result<super::AttackResult> {
+    let ko = super::apply_damage(state, defender, SlotRef::Active, base_damage);
+    let events = vec![crate::engine::Event::Damage {
+        target_player: defender, target_slot: SlotRef::Active, damage: base_damage, ko,
+    }];
+    if let Some(slot) = state.players[attacker.0].get_slot_mut(SlotRef::Active) {
+        if let Some(energy) = slot.energies.pop() {
+            state.players[attacker.0].discard.push(energy);
+        }
+    }
+    Ok(super::AttackResult { damage: base_damage, ko, bench_damage: vec![], events, self_lock: false })
+}
+
+/// Roaring Moon ex - Calamity Storm: +60 if stadium in play.
+pub fn attack_discard_stadium_bonus(
+    state: &mut GameState,
+    attacker: PlayerId,
+    defender: PlayerId,
+    base_damage: u16,
+    _choices: &crate::action::Choices,
+) -> Result<super::AttackResult> {
+    let has_stadium = state.players[0].stadium.is_some() || state.players[1].stadium.is_some();
+    let damage = if has_stadium { base_damage + 60 } else { base_damage };
+    let ko = super::apply_damage(state, defender, SlotRef::Active, damage);
+    let events = vec![crate::engine::Event::Damage {
+        target_player: defender, target_slot: SlotRef::Active, damage, ko,
+    }];
+    Ok(super::AttackResult { damage, ko, bench_damage: vec![], events, self_lock: false })
+}
