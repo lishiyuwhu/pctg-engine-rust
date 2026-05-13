@@ -355,3 +355,57 @@ pub fn effect_electric_generator(
 
     Ok(EffectResult::new())
 }
+
+/// Buddy-Buddy Poffin: search deck for up to 2 Basic Pokemon with HP <= 70, put on bench.
+pub fn effect_buddy_poffin(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    use crate::card::Stage;
+    let max_bench = crate::MAX_BENCH_SIZE;
+    let player_state = &state.players[player.0];
+    if player_state.bench_count() >= max_bench {
+        return Ok(EffectResult::new());
+    }
+    let mut found: Vec<crate::state::CardInstanceId> = Vec::new();
+    for &card_id in player_state.deck.iter().rev() {
+        if found.len() >= 2 { break; }
+        if let Some(def) = state.get_card_def(card_id) {
+            if def.is_pokemon() && def.stage == Some(Stage::Basic) && def.hp.unwrap_or(999) <= 70 {
+                found.push(card_id);
+            }
+        }
+    }
+    let player_state = &mut state.players[player.0];
+    for card_id in found {
+        if let Some(pos) = player_state.deck.iter().position(|&id| id == card_id) {
+            player_state.deck.remove(pos);
+            if let Some(slot) = player_state.bench.iter_mut().find(|s| s.is_none()) {
+                let mut pokemon = crate::state::PokemonSlot::new();
+                pokemon.cards.push(card_id);
+                pokemon.turn_put_in_play = state.turn.turn_number;
+                *slot = Some(pokemon);
+            }
+        }
+    }
+    Ok(EffectResult::new())
+}
+
+/// Super Rod: shuffle up to 3 Pokemon + Basic Energy from discard pile into deck.
+pub fn effect_super_rod(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    let player_state = &state.players[player.0];
+    let mut to_recover: Vec<crate::state::CardInstanceId> = Vec::new();
+    for &card_id in player_state.discard.iter().rev() {
+        if to_recover.len() >= 3 { break; }
+        if let Some(def) = state.get_card_def(card_id) {
+            if def.is_pokemon() || def.is_basic_energy() {
+                to_recover.push(card_id);
+            }
+        }
+    }
+    let player_state = &mut state.players[player.0];
+    for card_id in &to_recover {
+        if let Some(pos) = player_state.discard.iter().position(|&id| id == *card_id) {
+            player_state.discard.remove(pos);
+            player_state.deck.push(*card_id);
+        }
+    }
+    Ok(EffectResult::new())
+}

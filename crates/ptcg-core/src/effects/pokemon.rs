@@ -245,3 +245,69 @@ pub fn attack_scorching_darkness(
         }),
     )
 }
+
+/// Forest Seal Stone — Star Alchemy: search deck for any 1 card.
+pub fn ability_star_alchemy(
+    state: &mut crate::state::GameState,
+    player: crate::state::PlayerId,
+    _source: crate::state::SlotRef,
+) -> Result<EffectResult> {
+    use crate::effects::common::search_deck;
+
+    let player_state = &state.players[player.0];
+    if player_state.deck.is_empty() {
+        return Ok(EffectResult::new());
+    }
+
+    // Search deck for any 1 card (simplified: take the first card)
+    let card = player_state.deck.last().copied();
+    if let Some(card_id) = card {
+        let player_state = &mut state.players[player.0];
+        player_state.deck.pop();
+        player_state.hand.push(card_id);
+    }
+
+    Ok(EffectResult::new())
+}
+
+/// Radiant Greninja — Concealed Cards: discard 1 energy, draw 2 cards.
+pub fn ability_concealed_cards(
+    state: &mut crate::state::GameState,
+    player: crate::state::PlayerId,
+    source: crate::state::SlotRef,
+) -> Result<EffectResult> {
+    let slot = state.players[player.0].get_slot(source);
+    if slot.map(|s| s.energies.is_empty()).unwrap_or(true) {
+        return Ok(EffectResult::new());
+    }
+    if let Some(slot) = state.players[player.0].get_slot_mut(source) {
+        if let Some(energy) = slot.energies.pop() {
+            state.players[player.0].discard.push(energy);
+            state.draw_cards(player, 2);
+        }
+    }
+    Ok(EffectResult::new())
+}
+
+/// Mew ex — Restart: put hand on bottom of deck, draw same number.
+pub fn ability_restart(
+    state: &mut crate::state::GameState,
+    player: crate::state::PlayerId,
+    _source: crate::state::SlotRef,
+) -> Result<EffectResult> {
+    let player_state = &mut state.players[player.0];
+    let hand_size = player_state.hand.len();
+    if hand_size == 0 {
+        return Ok(EffectResult::new());
+    }
+    let hand_cards: Vec<_> = player_state.hand.drain(..).collect();
+    for &card in hand_cards.iter().rev() {
+        player_state.deck.insert(0, card);
+    }
+    for _ in 0..hand_size {
+        if let Some(card) = player_state.deck.pop() {
+            player_state.hand.push(card);
+        }
+    }
+    Ok(EffectResult::new())
+}

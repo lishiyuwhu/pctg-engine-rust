@@ -1037,13 +1037,16 @@ pub mod presets {
             id: CardDefId::new("CSV7C", "066"),
             name: "Forest Seal Stone".into(), name_en: "Forest Seal Stone".into(), set_code: "CSV7C".into(),
             card_type: CardType::Tool, stage: None, hp: None, energy_type: None, weakness: None, resistance: None,
-            retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![], provides_energy: None, damage_modifier: None, retreat_modifier: None,
+            retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![
+                Ability { name: "Star Alchemy".into(), effect_id: "tool_star_alchemy".into(), text: "Search deck for any 1 card".into() }
+            ], provides_energy: None, damage_modifier: None, retreat_modifier: None,
         });
         registry.register(CardDef {
             id: CardDefId::new("CSV7C", "188"),
             name: "Heavy Baton".into(), name_en: "Heavy Baton".into(), set_code: "CSV7C".into(),
             card_type: CardType::Tool, stage: None, hp: None, energy_type: None, weakness: None, resistance: None,
-            retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![], provides_energy: None, damage_modifier: None, retreat_modifier: None,
+            retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![], provides_energy: None,
+            damage_modifier: None, retreat_modifier: None,
         });
         registry.register(CardDef {
             id: CardDefId::new("CSV1C", "118"),

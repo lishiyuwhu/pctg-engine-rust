@@ -1,6 +1,6 @@
 # PTCG Rust Engine - 项目进度
 
-> 最后更新: 2026-05-10
+> 最后更新: 2026-05-12
 
 ## 项目概述
 
@@ -29,6 +29,7 @@
 | M8: Python Gym接口 | ✅ 完成 | 100% |
 | M9: 性能优化 | ✅ 完成 | 100% |
 | M10: 文档与测试 | ✅ 完成 | 100% |
+| M11: GDScript 同步 | ✅ 完成 | 100% |
 
 ---
 
@@ -282,6 +283,29 @@ All draws (random strategy, no KOs)
 | **总计** | 45 | **57** |
 
 新增: setup flow, phase transition, end turn, record_replay, prize setup, winner check, direct observation vector, damage calculator
+
+---
+
+## M11: GDScript 同步 (已完成)
+
+基于 PtcgDeckAgent 最新代码 (`8a66870`, 2026-05-05) 同步关键规则和效果。
+
+### 引擎核心修复 (4项)
+- [x] **Pokemon Check** — 回合间 poison/burn 伤害, sleep/paralyze 恢复
+- [x] **Heavy Baton KO 能量转移** — KO 时转移最多 3 张基本能量到 bench
+- [x] **Forest Seal Stone / Star Alchemy** — Tool 授予的 ability
+- [x] **Deck-out 判负** — 牌库抽空判负
+- [x] **First-turn attack restriction** — 先攻首回合不能攻击
+
+### 效果补全 (5项)
+- [x] ability_concealed_cards (Radiant Greninja)
+- [x] ability_restart (Mew ex)
+- [x] Buddy-Buddy Poffin dispatch
+- [x] Super Rod dispatch
+- [x] Counter Catcher dispatch
+
+### 文档
+- [x] `UNIMPLEMENTED.md` — 完整记录所有未实现功能及跳过理由
 
 ---
 

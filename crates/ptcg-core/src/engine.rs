@@ -165,6 +165,7 @@ impl Engine {
         };
 
         state.turn.active_player = starting_player;
+        state.turn.first_player = starting_player;
         state.turn.turn_number = 1;
         state.turn.phase = Phase::Setup;
 
@@ -404,6 +405,18 @@ impl Engine {
                             ability_index: 0,
                             choices: Choices::new(),
                         });
+                    }
+                }
+                // Tool-granted abilities (e.g. Forest Seal Stone → Star Alchemy)
+                if let Some(tool_id) = active.tool {
+                    if let Some(tool_def) = self.state.get_card_def(tool_id) {
+                        if !tool_def.abilities.is_empty() {
+                            actions.push(Action::UseAbility {
+                                source: SlotRef::Active,
+                                ability_index: 0,
+                                choices: Choices::new(),
+                            });
+                        }
                     }
                 }
             }
@@ -782,23 +795,23 @@ impl Engine {
         source: SlotRef,
         _choices: &Choices,
     ) -> Vec<Event> {
-        let player_state = &mut self.state.players[player.0];
-
-        // Get the Pokemon with the ability
-        let slot = match player_state.get_slot(source) {
-            Some(s) => s,
-            None => return Vec::new(),
+        // Read ability info before mutable borrow
+        let (effect_id, ability_name) = {
+            let player_state = &self.state.players[player.0];
+            let slot = match player_state.get_slot(source) {
+                Some(s) => s,
+                None => return Vec::new(),
+            };
+            slot.top_card()
+                .and_then(|id| self.state.get_card_def(id))
+                .and_then(|def| def.abilities.first().map(|a| (a.effect_id.clone(), a.name.clone())))
+                .or_else(|| {
+                    slot.tool
+                        .and_then(|tool_id| self.state.get_card_def(tool_id))
+                        .and_then(|def| def.abilities.first().map(|a| (a.effect_id.clone(), a.name.clone())))
+                })
+                .unwrap_or((String::new(), String::new()))
         };
-
-        let (effect_id, ability_name) = slot
-            .top_card()
-            .and_then(|id| self.state.get_card_def(id))
-            .and_then(|def| {
-                def.abilities
-                    .first()
-                    .map(|a| (a.effect_id.clone(), a.name.clone()))
-            })
-            .unwrap_or((String::new(), String::new()));
 
         // Dispatch the ability effect
         let result = super::effects::dispatch_ability(&mut self.state, player, source, &effect_id);
@@ -930,13 +943,63 @@ impl Engine {
     fn process_ko(&mut self, player: PlayerId, slot: SlotRef, attacker: PlayerId) -> Vec<Event> {
         let mut events = Vec::new();
 
+        // Check for Heavy Baton before collecting cards
+        let pokemon_slot = match slot {
+            SlotRef::Active => self.state.players[player.0].active.as_ref(),
+            SlotRef::Bench(i) => self.state.players[player.0].bench[i].as_ref(),
+        };
+        let has_heavy_baton = pokemon_slot
+            .and_then(|s| s.tool)
+            .and_then(|tool_id| self.state.get_card_def(tool_id))
+            .map(|def| def.name.contains("Heavy Baton"))
+            .unwrap_or(false);
+
+        // Heavy Baton: transfer up to 3 basic energies to bench before discarding
+        let mut transferred_energies = Vec::new();
+        if has_heavy_baton {
+            let basic_energy_ids: Vec<_> = pokemon_slot
+                .unwrap()
+                .energies
+                .iter()
+                .filter(|&&eid| {
+                    self.state.get_card_def(eid)
+                        .map(|def| def.is_basic_energy())
+                        .unwrap_or(false)
+                })
+                .take(3)
+                .copied()
+                .collect();
+
+            if !basic_energy_ids.is_empty() {
+                // Find first available bench slot to transfer energy to
+                for (i, bench_slot) in self.state.players[player.0].bench.iter_mut().enumerate() {
+                    if let Some(bench) = bench_slot {
+                        if !bench.is_empty() && transferred_energies.len() < basic_energy_ids.len() {
+                            let remaining = basic_energy_ids.len() - transferred_energies.len();
+                            let take = remaining.min(basic_energy_ids.len() - transferred_energies.len());
+                            // Transfer all remaining to first valid bench
+                            for &eid in &basic_energy_ids[transferred_energies.len()..basic_energy_ids.len()] {
+                                bench.energies.push(eid);
+                                transferred_energies.push(eid);
+                            }
+                            break; // Simple: all to first bench
+                        }
+                    }
+                }
+            }
+        }
+
         // Collect all cards from the KO'd Pokemon
         let mut discarded = Vec::new();
 
         // Get and clear the slot
         match slot {
             SlotRef::Active => {
-                if let Some(pokemon) = self.state.players[player.0].active.take() {
+                if let Some(mut pokemon) = self.state.players[player.0].active.take() {
+                    // Remove transferred energies from the set to discard
+                    if !transferred_energies.is_empty() {
+                        pokemon.energies.retain(|e| !transferred_energies.contains(e));
+                    }
                     discarded.extend(pokemon.cards);
                     discarded.extend(pokemon.energies);
                     if let Some(tool) = pokemon.tool {
@@ -945,7 +1008,10 @@ impl Engine {
                 }
             }
             SlotRef::Bench(i) => {
-                if let Some(pokemon) = self.state.players[player.0].bench[i].take() {
+                if let Some(mut pokemon) = self.state.players[player.0].bench[i].take() {
+                    if !transferred_energies.is_empty() {
+                        pokemon.energies.retain(|e| !transferred_energies.contains(e));
+                    }
                     discarded.extend(pokemon.cards);
                     discarded.extend(pokemon.energies);
                     if let Some(tool) = pokemon.tool {
@@ -999,6 +1065,11 @@ impl Engine {
     }
 
     fn execute_end_turn(&mut self, player: PlayerId) -> Vec<Event> {
+        let mut events = Vec::new();
+
+        // Pokemon Check: between-turns status resolution
+        events.extend(self.do_pokemon_check(player));
+
         // Clear turn state
         self.state.players[player.0].clear_turn_state();
 
@@ -1018,7 +1089,62 @@ impl Engine {
         self.state.turn.phase = Phase::Play;
         self.state.turn.attack_locked = false;
 
-        vec![]
+        events
+    }
+
+    /// Between-turns status check: poison/burn damage, sleep/paralyze recovery.
+    /// Runs at the end of the current player's turn, before switching active player.
+    fn do_pokemon_check(&mut self, current_player: PlayerId) -> Vec<Event> {
+        let mut events = Vec::new();
+
+        for pi in 0..2 {
+            let player_id = PlayerId(pi);
+            // Read status flags first, then mutate
+            let (poisoned, burned, asleep, paralyzed) = {
+                let player_state = &self.state.players[pi];
+                match &player_state.active {
+                    Some(s) if !s.is_empty() => (
+                        s.status.poisoned, s.status.burned,
+                        s.status.asleep, s.status.paralyzed,
+                    ),
+                    _ => continue,
+                }
+            };
+
+            let mut took_damage = false;
+            let active = self.state.players[pi].active.as_mut().unwrap();
+
+            if poisoned {
+                active.damage += 10;
+                took_damage = true;
+            }
+            if burned {
+                active.damage += 20;
+                took_damage = true;
+                if self.rng.coin_flip() {
+                    active.status.burned = false;
+                }
+            }
+            if asleep {
+                if self.rng.coin_flip() {
+                    active.status.asleep = false;
+                }
+            }
+            if pi == current_player.0 && paralyzed {
+                active.status.paralyzed = false;
+            }
+
+            if took_damage {
+                events.push(Event::Damage {
+                    target_player: player_id,
+                    target_slot: SlotRef::Active,
+                    damage: if poisoned && burned { 30 } else if poisoned { 10 } else { 20 },
+                    ko: false,
+                });
+            }
+        }
+
+        events
     }
 
     fn apply_phase_transitions(&mut self) {
@@ -1053,23 +1179,30 @@ impl Engine {
     }
 
     fn check_winner(&self) -> Option<PlayerId> {
-        // Check if a player has taken all 6 prize cards.
-        // Prizes start at 6 and are decremented as they're taken.
-        // Empty prizes means the player started with 0 prizes (during setup)
-        // which should not trigger a win.
+        // Skip checks during setup/mulligan
+        let in_setup = matches!(self.state.turn.phase, Phase::Setup | Phase::Mulligan);
+
+        // Check if a player has taken all 6 prize cards
         for (i, player_state) in self.state.players.iter().enumerate() {
-            if player_state.prizes.is_empty()
-                && !matches!(self.state.turn.phase, Phase::Setup | Phase::Mulligan)
-            {
+            if player_state.prizes.is_empty() && !in_setup {
                 return Some(PlayerId(i));
             }
         }
 
-        // Check if opponent has no Pokemon (skip during setup/mulligan)
-        if !matches!(self.state.turn.phase, Phase::Setup | Phase::Mulligan) {
+        // Check if opponent has no Pokemon
+        if !in_setup {
             for (i, player_state) in self.state.players.iter().enumerate() {
                 if !player_state.has_pokemon_in_play() {
                     return Some(PlayerId(1 - i));
+                }
+            }
+        }
+
+        // Deck-out: player loses if unable to draw at turn start (deck is empty)
+        if !in_setup {
+            for (i, player_state) in self.state.players.iter().enumerate() {
+                if player_state.deck.is_empty() {
+                    return Some(PlayerId(1 - i)); // opponent wins
                 }
             }
         }

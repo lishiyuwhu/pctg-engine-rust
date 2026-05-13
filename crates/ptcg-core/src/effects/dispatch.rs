@@ -16,6 +16,9 @@ pub fn dispatch_ability(
         "ability_infernal_reign" => super::pokemon::ability_infernal_reign(state, player, source),
         "ability_wind_search" => super::pokemon::ability_wind_search(state, player, source),
         "ability_awaken" => Ok(EffectResult::new()),
+        "ability_concealed_cards" => super::pokemon::ability_concealed_cards(state, player, source),
+        "ability_restart" => super::pokemon::ability_restart(state, player, source),
+        "tool_star_alchemy" => super::pokemon::ability_star_alchemy(state, player, source),
         _ => Err(crate::error::EngineError::InvalidAction(format!(
             "Unknown ability effect: {}",
             effect_id
@@ -51,6 +54,16 @@ pub fn dispatch_trainer(
             super::trainers::effect_boss_orders(state, player, target)
         }
         "Iono" | "iono" => super::trainers::effect_iono(state, player),
+        "Buddy-Buddy Poffin" | "buddy_poffin" | "buddy-buddy poffin" => {
+            super::trainers::effect_buddy_poffin(state, player)
+        }
+        "Super Rod" | "super_rod" => super::trainers::effect_super_rod(state, player),
+        "Counter Catcher" | "counter_catcher" => {
+            let target = choices.selected_slots.first().copied().ok_or_else(|| {
+                crate::error::EngineError::InvalidAction("Must select target".into())
+            })?;
+            super::trainers::effect_boss_orders(state, player, target) // same mechanic
+        }
         _ => Err(crate::error::EngineError::InvalidAction(format!(
             "Unknown trainer effect: {}",
             card_id

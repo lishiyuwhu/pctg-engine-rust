@@ -382,7 +382,12 @@ impl RuleValidator {
         if active.status.asleep || active.status.paralyzed {
             return Err(EngineError::CannotAttack("Pokemon is asleep or paralyzed".into()));
         }
-        
+
+        // First-turn attack restriction: player going first cannot attack on turn 1
+        if state.turn.turn_number == 1 && state.turn.first_player == player {
+            return Err(EngineError::CannotAttack("First player cannot attack on turn 1".into()));
+        }
+
         Ok(())
     }
 

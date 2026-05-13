@@ -272,6 +272,8 @@ pub struct TurnState {
     pub mulligan_count: u8,
     pub prizes_taken_this_turn: u8,
     pub attack_locked: bool,
+    /// The player who takes the first turn (cannot attack on turn 1).
+    pub first_player: PlayerId,
 }
 
 impl TurnState {
@@ -282,6 +284,7 @@ impl TurnState {
             phase: Phase::Setup,
             sub_phase: None,
             mulligan_done: false,
+            first_player: PlayerId(0),
             mulligan_count: 0,
             prizes_taken_this_turn: 0,
             attack_locked: false,
