@@ -513,6 +513,48 @@ pub fn ability_dusknoir_curse_bomb(
     Ok(EffectResult::new())
 }
 
+/// Gardevoir ex — Psychic Embrace: attach Psychic Energy from discard to own Pokemon.
+pub fn ability_psychic_embrace(
+    state: &mut GameState, player: PlayerId, source: SlotRef,
+) -> Result<EffectResult> {
+    let psychic_pos = state.players[player.0].discard.iter().position(|&id| {
+        state.get_card_def(id).map(|d| d.energy_type == Some(EnergyType::Psychic)).unwrap_or(false)
+    });
+    if let Some(pos) = psychic_pos {
+        let card = state.players[player.0].discard.remove(pos);
+        if let Some(slot) = state.players[player.0].get_slot_mut(source) {
+            slot.energies.push(card);
+        }
+    }
+    Ok(EffectResult::new())
+}
+
+/// Dragapult ex — Phantom Dive: 200 + place 6 damage counters on opponent bench.
+pub fn attack_phantom_dive(
+    state: &mut GameState, attacker: PlayerId, defender: PlayerId,
+    base_damage: u16, _choices: &crate::action::Choices,
+) -> Result<super::AttackResult> {
+    let ko = super::apply_damage(state, defender, SlotRef::Active, base_damage);
+    let mut bench_damage = Vec::new();
+    let mut events = vec![crate::engine::Event::Damage {
+        target_player: defender, target_slot: SlotRef::Active, damage: base_damage, ko,
+    }];
+    // Place 6 damage counters (60 damage) on opponent's bench Pokemon
+    let counters = 60u16;
+    for i in 0..5 {
+        if let Some(slot) = state.players[defender.0].bench[i].as_mut() {
+            if !slot.is_empty() {
+                slot.damage += counters;
+                bench_damage.push((SlotRef::Bench(i), counters));
+                events.push(crate::engine::Event::Damage {
+                    target_player: defender, target_slot: SlotRef::Bench(i), damage: counters, ko: false,
+                });
+            }
+        }
+    }
+    Ok(super::AttackResult { damage: base_damage, ko, bench_damage, events, self_lock: false })
+}
+
 /// Iron Bundle — Blower: if on bench, switch opponent active with bench.
 pub fn ability_iron_bundle_blower(
     state: &mut GameState, player: PlayerId, _source: SlotRef,

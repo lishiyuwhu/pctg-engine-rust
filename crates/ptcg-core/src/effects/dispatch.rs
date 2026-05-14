@@ -26,6 +26,7 @@ pub fn dispatch_ability(
         "ability_instant_charge" => super::pokemon::ability_instant_charge(state, player, source),
         "ability_flip_the_script" => super::pokemon::ability_flip_the_script(state, player, source),
         "ability_dusknoir_curse_bomb" => super::pokemon::ability_dusknoir_curse_bomb(state, player, source),
+        "ability_psychic_embrace" => super::pokemon::ability_psychic_embrace(state, player, source),
         "ability_iron_bundle_blower" => super::pokemon::ability_iron_bundle_blower(state, player, source),
         "ability_azure_command" => Ok(EffectResult::new()), // Iron Crown — future damage boost (passive)
         _ => Err(crate::error::EngineError::InvalidAction(format!(
@@ -110,6 +111,9 @@ pub fn dispatch_attack(
         }
         "attack_discard_energy_from_self" => {
             super::pokemon::attack_discard_energy_from_self(state, attacker, defender, base_damage)
+        }
+        "attack_phantom_dive" => {
+            super::pokemon::attack_phantom_dive(state, attacker, defender, base_damage, choices)
         }
         "attack_discard_stadium_bonus" => {
             super::pokemon::attack_discard_stadium_bonus(state, attacker, defender, base_damage, choices)
