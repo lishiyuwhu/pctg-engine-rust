@@ -17,7 +17,7 @@ except ImportError:
 from .opponent import RandomOpponent, HeuristicOpponent
 
 
-class PTCGEnv:
+class PTCGEnv(gym.Env if GYM_AVAILABLE else object):
     """Gymnasium-compatible environment for Pokemon TCG.
 
     The agent plays as Player 0 (Miraidon by default).
@@ -177,6 +177,10 @@ class PTCGEnv:
         }
 
         return obs, reward, False, truncated, info
+
+    def action_masks(self) -> np.ndarray:
+        """Return boolean action mask for MaskablePPO."""
+        return self._get_action_mask()
 
     def render(self):
         """Render the current game state."""

@@ -454,6 +454,44 @@ fn parse_choices(map: &HashMap<String, serde_json::Value>) -> Choices {
     choices
 }
 
+// ── Strategy Action Suggester ────────────────────────────────────────
+
+/// Suggest the best action for a given player using a named strategy.
+/// strategy_name: "Miraidon" | "Charizard" | "GougingFire" | ...
+/// Returns the action index (0..1023), or None if no legal actions.
+#[pyfunction]
+fn suggest_strategy_action(
+    player_id: usize,
+    strategy_name: &str,
+    legal_indices: Vec<usize>,
+    legal_actions_json: Vec<String>,
+) -> PyResult<Option<usize>> {
+    use ptcg_core::strategy::DeckStrategy;
+
+    if legal_indices.is_empty() {
+        return Ok(None);
+    }
+
+    // Parse legal actions from JSON
+    let actions: Vec<ptcg_core::action::Action> = legal_actions_json
+        .iter()
+        .map(|s| PyEngine::parse_action_json(s))
+        .collect();
+
+    // Select strategy
+    let strategy: Box<dyn DeckStrategy> = match strategy_name {
+        "Miraidon" => Box::new(ptcg_core::strategy::MiraidonStrategy),
+        "Charizard" => Box::new(ptcg_core::strategy::CharizardStrategy),
+        "GougingFire" => Box::new(ptcg_core::strategy::GougingFireStrategy),
+        "FutureBox" => Box::new(ptcg_core::strategy::FutureBoxStrategy),
+        _ => Box::new(ptcg_core::strategy::MiraidonStrategy),
+    };
+
+    // Note: We don't have a GameState here. This function is a stub for
+    // when game state can be passed. For now, return random legal action.
+    Ok(Some(legal_indices[0]))
+}
+
 // ── Batch Runner ────────────────────────────────────────────────────
 
 /// Run N random-matchup games in parallel using strategy bots.
