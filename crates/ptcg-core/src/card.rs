@@ -849,7 +849,9 @@ pub mod presets {
             weakness: Some(TypeMultiplier { energy_type: EnergyType::Lightning, multiplier: 2 }),
             resistance: Some(TypeMultiplier { energy_type: EnergyType::Fighting, multiplier: -30 }),
             retreat_cost: Some(2), mechanic: Some(Mechanic::V),
-            attacks: vec![], abilities: vec![], provides_energy: None, damage_modifier: None, retreat_modifier: None,
+            attacks: vec![], abilities: vec![
+                Ability { name: "Luminous Sign".into(), effect_id: "ability_luminous_sign".into(), text: "When played to bench, search a Supporter".into() }
+            ], provides_energy: None, damage_modifier: None, retreat_modifier: None,
         });
         registry.register(CardDef {
             id: CardDefId::new("CSV2C", "105"),

@@ -21,6 +21,10 @@ pub fn dispatch_ability(
         "ability_burst_roar" => super::pokemon::ability_burst_roar(state, player, source),
         "tool_star_alchemy" => super::pokemon::ability_star_alchemy(state, player, source),
         "ability_quick_draw" => Ok(EffectResult::new()), // Iron Leaves — bench-in switch (simplified no-op)
+        "ability_squawk_and_seize" => super::pokemon::ability_squawk_and_seize(state, player, source),
+        "ability_luminous_sign" => super::pokemon::ability_luminous_sign(state, player, source),
+        "ability_instant_charge" => super::pokemon::ability_instant_charge(state, player, source),
+        "ability_flip_the_script" => super::pokemon::ability_flip_the_script(state, player, source),
         "ability_iron_bundle_blower" => Ok(EffectResult::new()), // Iron Bundle — gust from bench (simplified no-op)
         "ability_azure_command" => Ok(EffectResult::new()), // Iron Crown — future damage boost (passive)
         _ => Err(crate::error::EngineError::InvalidAction(format!(

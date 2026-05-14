@@ -434,3 +434,55 @@ pub fn attack_discard_stadium_bonus(
     }];
     Ok(super::AttackResult { damage, ko, bench_damage: vec![], events, self_lock: false })
 }
+
+// ── Tier 1: High-frequency draw/search abilities ──
+
+/// Squawkabilly ex — Squawk and Seize: discard hand, draw 6. Turn 1 only.
+pub fn ability_squawk_and_seize(
+    state: &mut GameState, player: PlayerId, _source: SlotRef,
+) -> Result<EffectResult> {
+    let ps = &mut state.players[player.0];
+    // Discard entire hand
+    let hand: Vec<_> = ps.hand.drain(..).collect();
+    ps.discard.extend(hand);
+    // Draw 6
+    state.draw_cards(player, 6);
+    Ok(EffectResult::new())
+}
+
+/// Lumineon V — Luminous Sign: when played to bench, search deck for a Supporter.
+pub fn ability_luminous_sign(
+    state: &mut GameState, player: PlayerId, _source: SlotRef,
+) -> Result<EffectResult> {
+    // Find a Supporter card in deck (read-only pass)
+    let supporter_pos = {
+        let ps = &state.players[player.0];
+        ps.deck.iter().rev().position(|&id| {
+            state.get_card_def(id).map(|d| d.card_type == crate::card::CardType::Supporter).unwrap_or(false)
+        })
+    };
+    if let Some(pos) = supporter_pos {
+        let ps = &mut state.players[player.0];
+        let idx = ps.deck.len() - 1 - pos;
+        let card_id = ps.deck.remove(idx);
+        ps.hand.push(card_id);
+    }
+    Ok(EffectResult::new())
+}
+
+/// Rotom V — Instant Charge: draw 3 cards, then end turn.
+pub fn ability_instant_charge(
+    state: &mut GameState, player: PlayerId, _source: SlotRef,
+) -> Result<EffectResult> {
+    state.draw_cards(player, 3);
+    Ok(EffectResult::new())
+}
+
+/// Fezandipiti ex — Flip the Script: if own Pokemon was KO'd last opponent's turn, draw 3.
+pub fn ability_flip_the_script(
+    state: &mut GameState, player: PlayerId, _source: SlotRef,
+) -> Result<EffectResult> {
+    // Simplified: always draw 3 (condition tracking not implemented)
+    state.draw_cards(player, 3);
+    Ok(EffectResult::new())
+}
