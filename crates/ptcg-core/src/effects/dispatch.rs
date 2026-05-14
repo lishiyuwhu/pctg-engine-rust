@@ -25,7 +25,8 @@ pub fn dispatch_ability(
         "ability_luminous_sign" => super::pokemon::ability_luminous_sign(state, player, source),
         "ability_instant_charge" => super::pokemon::ability_instant_charge(state, player, source),
         "ability_flip_the_script" => super::pokemon::ability_flip_the_script(state, player, source),
-        "ability_iron_bundle_blower" => Ok(EffectResult::new()), // Iron Bundle — gust from bench (simplified no-op)
+        "ability_dusknoir_curse_bomb" => super::pokemon::ability_dusknoir_curse_bomb(state, player, source),
+        "ability_iron_bundle_blower" => super::pokemon::ability_iron_bundle_blower(state, player, source),
         "ability_azure_command" => Ok(EffectResult::new()), // Iron Crown — future damage boost (passive)
         _ => Err(crate::error::EngineError::InvalidAction(format!(
             "Unknown ability effect: {}",

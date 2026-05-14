@@ -478,6 +478,58 @@ pub fn ability_instant_charge(
     Ok(EffectResult::new())
 }
 
+/// Manaphy bench check: is Awaken active? Returns true if Manaphy protects bench.
+pub fn is_manaphy_awaken_active(state: &GameState, player: PlayerId) -> bool {
+    state.players[player.0].bench.iter().any(|s| {
+        s.as_ref().and_then(|s| s.top_card()).and_then(|id| state.get_card_def(id))
+            .map(|d| d.abilities.iter().any(|a| a.effect_id == "ability_awaken"))
+            .unwrap_or(false)
+    })
+}
+
+/// Dusknoir line — Curse Blast: self-KO, place N damage counters on opponent.
+pub fn ability_dusknoir_curse_bomb(
+    state: &mut GameState, player: PlayerId, source: SlotRef,
+) -> Result<EffectResult> {
+    // Read card name first (immutable borrow)
+    let is_dusknoir = state.players[player.0].get_slot(source)
+        .and_then(|s| s.top_card())
+        .and_then(|id| state.get_card_def(id))
+        .map(|d| d.name.contains("Dusknoir") || d.name.contains("黑夜魔灵"))
+        .unwrap_or(false);
+    let num_counters = if is_dusknoir { 13u16 } else { 5u16 };
+
+    if num_counters == 0 { return Ok(EffectResult::new()); }
+
+    // Self-KO (mutable borrow)
+    if let Some(slot) = state.players[player.0].get_slot_mut(source) {
+        slot.damage = 999; // KO self
+    }
+    // Place damage counters on opponent's active
+    let opponent = player.opponent();
+    if let Some(active) = state.players[opponent.0].active.as_mut() {
+        active.damage += (num_counters * 10) as u16;
+    }
+    Ok(EffectResult::new())
+}
+
+/// Iron Bundle — Blower: if on bench, switch opponent active with bench.
+pub fn ability_iron_bundle_blower(
+    state: &mut GameState, player: PlayerId, _source: SlotRef,
+) -> Result<EffectResult> {
+    let opp = player.opponent();
+    // Find a bench Pokemon to swap with
+    if let Some(bench_idx) = state.players[opp.0].bench.iter().position(|s| s.as_ref().map(|s| !s.is_empty()).unwrap_or(false)) {
+        if state.players[opp.0].active.is_some() && state.players[opp.0].bench[bench_idx].is_some() {
+            let active = state.players[opp.0].active.take();
+            let bench = state.players[opp.0].bench[bench_idx].take();
+            state.players[opp.0].active = bench;
+            state.players[opp.0].bench[bench_idx] = active;
+        }
+    }
+    Ok(EffectResult::new())
+}
+
 /// Fezandipiti ex — Flip the Script: if own Pokemon was KO'd last opponent's turn, draw 3.
 pub fn ability_flip_the_script(
     state: &mut GameState, player: PlayerId, _source: SlotRef,
