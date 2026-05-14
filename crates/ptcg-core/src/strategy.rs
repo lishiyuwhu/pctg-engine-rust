@@ -496,6 +496,72 @@ impl DeckStrategy for FutureBoxStrategy {
     }
 }
 
+// ── Generic strategy for any deck ────────────────────────────────────
+
+/// A generic strategy that works for any deck using standard heuristics.
+/// Deck-specific strategies can override energy-type or card-name priorities.
+macro_rules! generic_strategy {
+    ($name:ident) => {
+        pub struct $name;
+        impl DeckStrategy for $name {
+            fn score_action(&self, action: &Action, state: &GameState, player: PlayerId) -> f32 {
+                let ps = &state.players[player.0];
+                match action {
+                    Action::Attack { attack_index, .. } => {
+                        let dmg = ps.active.as_ref().and_then(|s| slot_card(s, state))
+                            .and_then(|c| c.attacks.get(*attack_index as usize)).map(|a| a.damage).unwrap_or(0);
+                        if would_ko_opponent(state, player, dmg) { 1200.0 }
+                        else if dmg >= 150 { 500.0 + dmg as f32 }
+                        else { 300.0 + dmg as f32 }
+                    }
+                    Action::AttachEnergy { card: _, target } => {
+                        let card = ps.get_slot(*target).and_then(|s| slot_card(s, state));
+                        match card {
+                            Some(c) => { let gap = attack_energy_gap(ps.get_slot(*target).unwrap(), c);
+                                match gap { 1 => 550.0, 0 => 80.0, _ => 300.0 } }
+                            _ => 40.0
+                        }
+                    }
+                    Action::PlayBasicToBench { .. } =>
+                        if ps.bench_count() >= 5 { 0.0 } else { 250.0 },
+                    Action::Retreat { target, .. } => {
+                        let bench_ok = match target { SlotRef::Bench(i) => ps.bench[*i].as_ref().map_or(false, |s| can_attack_now(s, state)), _ => false };
+                        let active_ok = ps.active.as_ref().and_then(|s| slot_card(s, state)).map_or(false, |c| attack_energy_gap(ps.active.as_ref().unwrap(), c) == 0);
+                        if active_ok { -200.0 } else if bench_ok { 550.0 } else { -100.0 }
+                    }
+                    Action::Evolve { .. } => 500.0,
+                    Action::UseAbility { .. } => 400.0,
+                    Action::PlayTrainer { .. } => 200.0,
+                    Action::EndTurn => 0.0,
+                    Action::SetupChooseActive { .. } => 500.0,
+                    _ => 100.0,
+                }
+            }
+            fn heuristic_base(&self, action: &Action) -> f32 { match action {
+                Action::Attack { .. } => 500.0, Action::AttachEnergy { .. } => 220.0,
+                Action::PlayTrainer { .. } => 110.0, Action::PlayBasicToBench { .. } => 180.0,
+                Action::UseAbility { .. } => 160.0, Action::Retreat { .. } => 90.0,
+                Action::Evolve { .. } => 300.0, Action::EndTurn => 0.0, _ => 100.0
+            }}
+        }
+    };
+}
+
+generic_strategy!(IronThornsStrategy);
+generic_strategy!(DialgaMetangStrategy);
+generic_strategy!(PalkiaDusknoirStrategy);
+generic_strategy!(PalkiaGholdengoStrategy);
+generic_strategy!(LostBoxStrategy);
+generic_strategy!(RegidragoStrategy);
+generic_strategy!(LugiaArcheopsStrategy);
+generic_strategy!(ArceusGiratinaStrategy);
+generic_strategy!(RagingBoltOgerponStrategy);
+generic_strategy!(GardevoirStrategy);
+generic_strategy!(BlisseyTankStrategy);
+generic_strategy!(DragapultBanetteStrategy);
+generic_strategy!(DragapultDusknoirStrategy);
+generic_strategy!(DragapultCharizardStrategy);
+
 #[cfg(test)]
 mod tests {
     use super::*;
