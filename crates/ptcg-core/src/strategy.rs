@@ -432,6 +432,70 @@ impl DeckStrategy for GougingFireStrategy {
     }
 }
 
+// ── Future Box Strategy ─────────────────────────────────────────────
+
+pub struct FutureBoxStrategy;
+
+impl DeckStrategy for FutureBoxStrategy {
+    fn score_action(&self, action: &Action, state: &GameState, player: PlayerId) -> f32 {
+        let player_state = &state.players[player.0];
+        let opponent = player.opponent();
+        let has_active = player_state.active.as_ref().map(|s| !s.is_empty()).unwrap_or(false);
+        let active_card = player_state.active.as_ref().and_then(|s| slot_card(s, state));
+
+        match action {
+            Action::Attack { attack_index, .. } => {
+                let damage = active_card.and_then(|c| c.attacks.get(*attack_index as usize)).map(|a| a.damage).unwrap_or(0);
+                let would_ko = would_ko_opponent(state, player, damage);
+                if would_ko { 1200.0 } else if damage >= 160 { 500.0 + damage as f32 } else { 300.0 + damage as f32 }
+            }
+            Action::AttachEnergy { card: _, target } => {
+                let slot = player_state.get_slot(*target);
+                let card = slot.and_then(|s| slot_card(s, state));
+                match card {
+                    Some(c) if c.energy_type == Some(EnergyType::Lightning) || c.energy_type == Some(EnergyType::Grass) => {
+                        let gap = attack_energy_gap(slot.unwrap(), c);
+                        match gap { 1 => 550.0, 0 => 80.0, _ => 300.0 }
+                    }
+                    _ => 40.0,
+                }
+            }
+            Action::PlayBasicToBench { .. } => {
+                if player_state.bench_count() >= 5 { 0.0 } else if player_state.bench_count() < 3 { 300.0 } else { 150.0 }
+            }
+            Action::Retreat { target, .. } => {
+                if !has_active { return 0.0; }
+                let bench_can_attack = match target {
+                    SlotRef::Bench(i) => player_state.bench[*i].as_ref().map_or(false, |s| can_attack_now(s, state)),
+                    _ => false,
+                };
+                let active_can = active_card.map_or(false, |c| player_state.active.as_ref().map_or(false, |s| attack_energy_gap(s, c) == 0));
+                if active_can { -200.0 } else if bench_can_attack { 550.0 } else { -100.0 }
+            }
+            Action::UseAbility { .. } => 350.0,
+            Action::PlayTrainer { .. } => 200.0,
+            Action::Evolve { .. } => 200.0,
+            Action::EndTurn => 0.0,
+            Action::SetupChooseActive { .. } => 500.0,
+            _ => 100.0,
+        }
+    }
+
+    fn heuristic_base(&self, action: &Action) -> f32 {
+        match action {
+            Action::Attack { .. } => 500.0,
+            Action::AttachEnergy { .. } => 220.0,
+            Action::PlayTrainer { .. } => 110.0,
+            Action::PlayBasicToBench { .. } => 180.0,
+            Action::UseAbility { .. } => 160.0,
+            Action::Retreat { .. } => 90.0,
+            Action::Evolve { .. } => 200.0,
+            Action::EndTurn => 0.0,
+            _ => 100.0,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

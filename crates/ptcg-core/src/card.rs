@@ -1176,6 +1176,70 @@ pub mod presets {
             provides_energy: None, damage_modifier: None, retreat_modifier: None,
         });
 
+        // ── Future Box deck ──
+        registry.register(CardDef {
+            id: CardDefId::new("CSV7C", "033"), name: "Iron Leaves ex".into(), name_en: "Iron Leaves ex".into(),
+            set_code: "CSV7C".into(), card_type: CardType::Pokemon, stage: Some(Stage::Basic),
+            hp: Some(220), energy_type: Some(EnergyType::Grass), weakness: Some(TypeMultiplier { energy_type: EnergyType::Fire, multiplier: 2 }),
+            resistance: None, retreat_cost: Some(1), mechanic: Some(Mechanic::Ex),
+            attacks: vec![Attack { name: "Prism Blade".into(), cost: vec![EnergyType::Grass, EnergyType::Grass, EnergyType::Colorless], damage: 180, text: "".into(), effect_id: None }],
+            abilities: vec![Ability { name: "Quick Draw".into(), effect_id: "ability_quick_draw".into(), text: "When played to bench, switch with active and move energy".into() }],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSV6C", "042"), name: "Iron Bundle".into(), name_en: "Iron Bundle".into(),
+            set_code: "CSV6C".into(), card_type: CardType::Pokemon, stage: Some(Stage::Basic),
+            hp: Some(100), energy_type: Some(EnergyType::Water), weakness: Some(TypeMultiplier { energy_type: EnergyType::Lightning, multiplier: 2 }),
+            resistance: None, retreat_cost: Some(1), mechanic: None,
+            attacks: vec![Attack { name: "Refrigerated Stream".into(), cost: vec![EnergyType::Water, EnergyType::Colorless, EnergyType::Colorless], damage: 80, text: "".into(), effect_id: None }],
+            abilities: vec![Ability { name: "Blower".into(), effect_id: "ability_iron_bundle_blower".into(), text: "If on bench, switch opponent active with bench".into() }],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSV7C", "111"), name: "Iron Crown ex".into(), name_en: "Iron Crown ex".into(),
+            set_code: "CSV7C".into(), card_type: CardType::Pokemon, stage: Some(Stage::Basic),
+            hp: Some(220), energy_type: Some(EnergyType::Psychic), weakness: Some(TypeMultiplier { energy_type: EnergyType::Darkness, multiplier: 2 }),
+            resistance: None, retreat_cost: Some(2), mechanic: Some(Mechanic::Ex),
+            attacks: vec![Attack { name: "Double Blade".into(), cost: vec![EnergyType::Psychic, EnergyType::Colorless, EnergyType::Colorless], damage: 160, text: "".into(), effect_id: None }],
+            abilities: vec![Ability { name: "Azure Command".into(), effect_id: "ability_azure_command".into(), text: "Future Pokemon attacks +20 to opponent active".into() }],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSV7C", "153"), name: "Miraidon".into(), name_en: "Miraidon".into(),
+            set_code: "CSV7C".into(), card_type: CardType::Pokemon, stage: Some(Stage::Basic),
+            hp: Some(110), energy_type: Some(EnergyType::Lightning), weakness: Some(TypeMultiplier { energy_type: EnergyType::Fighting, multiplier: 2 }),
+            resistance: None, retreat_cost: Some(2), mechanic: None,
+            attacks: vec![
+                Attack { name: "Peak Acceleration".into(), cost: vec![EnergyType::Colorless], damage: 40, text: "".into(), effect_id: None },
+                Attack { name: "Electric Spark".into(), cost: vec![EnergyType::Lightning, EnergyType::Lightning, EnergyType::Psychic], damage: 160, text: "".into(), effect_id: None },
+            ], abilities: vec![], provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        // Trainers
+        registry.register(CardDef {
+            id: CardDefId::new("CSV7C", "180"), name: "Prime Catcher".into(), name_en: "Prime Catcher".into(),
+            set_code: "CSV7C".into(), card_type: CardType::Item, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSV6C", "119"), name: "Future Booster Energy Capsule".into(), name_en: "Future Booster Energy Capsule".into(),
+            set_code: "CSV6C".into(), card_type: CardType::Tool, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: Some(0),
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSV2C", "113"), name: "Pokegear 3.0".into(), name_en: "Pokegear 3.0".into(),
+            set_code: "CSV2C".into(), card_type: CardType::Item, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+        registry.register(CardDef {
+            id: CardDefId::new("CSV6C", "116"), name: "Techno Radar".into(), name_en: "Techno Radar".into(),
+            set_code: "CSV6C".into(), card_type: CardType::Item, stage: None, hp: None, energy_type: None,
+            weakness: None, resistance: None, retreat_cost: None, mechanic: None, attacks: vec![], abilities: vec![],
+            provides_energy: None, damage_modifier: None, retreat_modifier: None,
+        });
+
         registry
     }
 }
