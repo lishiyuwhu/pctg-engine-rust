@@ -28,7 +28,13 @@ pub fn dispatch_ability(
         "ability_dusknoir_curse_bomb" => super::pokemon::ability_dusknoir_curse_bomb(state, player, source),
         "ability_psychic_embrace" => super::pokemon::ability_psychic_embrace(state, player, source),
         "ability_iron_bundle_blower" => super::pokemon::ability_iron_bundle_blower(state, player, source),
-        "ability_azure_command" => Ok(EffectResult::new()), // Iron Crown — future damage boost (passive)
+        "ability_azure_command" => Ok(EffectResult::new()),
+        "ability_adrena_brain" => super::pokemon::ability_adrena_brain(state, player, source),
+        "ability_veterans_technique" => super::pokemon::ability_veterans_technique(state, player, source),
+        "ability_recon_directive" => super::pokemon::ability_recon_directive(state, player, source),
+        "ability_fleet_foot" => super::pokemon::ability_fleet_foot(state, player, source),
+        "ability_painful_spoons" => super::pokemon::ability_painful_spoons(state, player, source),
+        "ability_charging_star" => super::pokemon::ability_charging_star(state, player, source),
         _ => Err(crate::error::EngineError::InvalidAction(format!(
             "Unknown ability effect: {}",
             effect_id
@@ -72,7 +78,31 @@ pub fn dispatch_trainer(
             let target = choices.selected_slots.first().copied().ok_or_else(|| {
                 crate::error::EngineError::InvalidAction("Must select target".into())
             })?;
-            super::trainers::effect_boss_orders(state, player, target) // same mechanic
+            super::trainers::effect_boss_orders(state, player, target)
+        }
+        "Professor's Research" | "professors_research" => {
+            super::trainers::effect_professors_research(state, player)
+        }
+        "Lost Vacuum" | "lost_vacuum" => {
+            super::trainers::effect_lost_vacuum(state, player)
+        }
+        "Earthen Vessel" | "earthen_vessel" => {
+            super::trainers::effect_earthen_vessel(state, player)
+        }
+        "Night Stretcher" | "night_stretcher" => {
+            super::trainers::effect_night_stretcher(state, player)
+        }
+        "Dark Patch" | "dark_patch" => {
+            super::trainers::effect_dark_patch(state, player)
+        }
+        "Energy Switch" | "energy_switch" => {
+            super::trainers::effect_energy_switch(state, player)
+        }
+        "Pal Pad" | "pal_pad" => {
+            super::trainers::effect_pal_pad(state, player)
+        }
+        "Hisuian Heavy Ball" | "hisuian_heavy_ball" => {
+            super::trainers::effect_hisuian_heavy_ball(state, player)
         }
         _ => Err(crate::error::EngineError::InvalidAction(format!(
             "Unknown trainer effect: {}",
@@ -117,6 +147,42 @@ pub fn dispatch_attack(
         }
         "attack_discard_stadium_bonus" => {
             super::pokemon::attack_discard_stadium_bonus(state, attacker, defender, base_damage, choices)
+        }
+        "attack_burning_darkness" => {
+            super::pokemon::attack_burning_darkness(state, attacker, defender, base_damage)
+        }
+        "attack_trinity_nova" => {
+            super::pokemon::attack_trinity_nova(state, attacker, defender, base_damage, choices)
+        }
+        "attack_storm_dive" => {
+            super::pokemon::attack_storm_dive(state, attacker, defender, base_damage, choices)
+        }
+        "attack_subspace_swell" => {
+            super::pokemon::attack_subspace_swell(state, attacker, defender, base_damage)
+        }
+        "attack_lost_impact" => {
+            super::pokemon::attack_lost_impact(state, attacker, defender, base_damage)
+        }
+        "attack_coin_scramble" => {
+            super::pokemon::attack_coin_scramble(state, attacker, defender, base_damage, choices)
+        }
+        "attack_eternal_darkness" => {
+            super::pokemon::attack_eternal_darkness(state, attacker, defender, base_damage)
+        }
+        "attack_miracle_force" => {
+            super::pokemon::attack_miracle_force(state, attacker, defender, base_damage)
+        }
+        "attack_blissey_return" => {
+            super::pokemon::attack_blissey_return(state, attacker, defender, base_damage, choices)
+        }
+        "attack_volt_cyclone" => {
+            super::pokemon::attack_volt_cyclone(state, attacker, defender, base_damage)
+        }
+        "attack_cruel_blade" => {
+            super::pokemon::attack_cruel_blade(state, attacker, defender, base_damage)
+        }
+        "attack_dragons_glory" => {
+            super::pokemon::attack_dragons_glory(state, attacker, defender, base_damage, choices)
         }
         _ => Ok(super::AttackResult::new(base_damage)),
     }

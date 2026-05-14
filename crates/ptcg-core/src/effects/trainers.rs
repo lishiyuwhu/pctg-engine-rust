@@ -409,3 +409,130 @@ pub fn effect_super_rod(state: &mut GameState, player: PlayerId) -> Result<Effec
     }
     Ok(EffectResult::new())
 }
+
+/// Professor's Research: discard hand, draw 7.
+pub fn effect_professors_research(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    let hand: Vec<_> = state.players[player.0].hand.drain(..).collect();
+    state.players[player.0].discard.extend(hand);
+    state.draw_cards(player, 7);
+    Ok(EffectResult::new())
+}
+
+/// Lost Vacuum: discard a Tool or Stadium in play.
+pub fn effect_lost_vacuum(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    let opp = player.opponent();
+    // Discard opponent's active tool if any
+    if let Some(slot) = state.players[opp.0].active.as_mut() {
+        if let Some(tool) = slot.tool.take() {
+            state.players[opp.0].discard.push(tool);
+            return Ok(EffectResult::new());
+        }
+    }
+    // Discard stadium
+    if let Some(stadium) = state.players[opp.0].stadium.take() {
+        state.players[opp.0].discard.push(stadium.card_id);
+    } else if let Some(stadium) = state.players[player.0].stadium.take() {
+        state.players[player.0].discard.push(stadium.card_id);
+    }
+    Ok(EffectResult::new())
+}
+
+/// Earthen Vessel: discard 1 card, search 2 basic energy from deck.
+pub fn effect_earthen_vessel(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    // Discard 1 from hand
+    if let Some(card) = state.players[player.0].hand.pop() {
+        state.players[player.0].discard.push(card);
+    }
+    // Search 2 basic energy
+    let mut found = Vec::new();
+    for &eid in state.players[player.0].deck.iter().rev() {
+        if found.len() >= 2 { break; }
+        if state.get_card_def(eid).map(|d| d.is_basic_energy()).unwrap_or(false) {
+            found.push(eid);
+        }
+    }
+    for eid in &found {
+        if let Some(pos) = state.players[player.0].deck.iter().position(|&id| id == *eid) {
+            state.players[player.0].deck.remove(pos);
+            state.players[player.0].hand.push(*eid);
+        }
+    }
+    Ok(EffectResult::new())
+}
+
+/// Night Stretcher: recover 1 Pokemon or Basic Energy from discard to hand.
+pub fn effect_night_stretcher(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    let pos = state.players[player.0].discard.iter().position(|&id| {
+        state.get_card_def(id).map(|d| d.is_pokemon() || d.is_basic_energy()).unwrap_or(false)
+    });
+    if let Some(idx) = pos {
+        let card = state.players[player.0].discard.remove(idx);
+        state.players[player.0].hand.push(card);
+    }
+    Ok(EffectResult::new())
+}
+
+/// Dark Patch: attach 1 basic Darkness energy from discard to benched Darkness Pokemon.
+pub fn effect_dark_patch(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    let pos = state.players[player.0].discard.iter().position(|&id| {
+        state.get_card_def(id).map(|d| d.is_basic_energy() && d.energy_type == Some(crate::card::EnergyType::Darkness)).unwrap_or(false)
+    });
+    if let Some(idx) = pos {
+        let energy = state.players[player.0].discard.remove(idx);
+        // Attach to first benched Darkness Pokemon
+        let bench_idx = state.players[player.0].bench.iter().position(|s| {
+            s.as_ref().and_then(|s| s.top_card()).and_then(|id| state.get_card_def(id))
+                .map(|d| d.energy_type == Some(crate::card::EnergyType::Darkness)).unwrap_or(false)
+        });
+        if let (Some(bi), Some(slot)) = (bench_idx, state.players[player.0].bench.get_mut(bench_idx.unwrap_or(0)).and_then(|s| s.as_mut())) {
+            slot.energies.push(energy);
+        } else if let Some(slot) = state.players[player.0].active.as_mut() {
+            slot.energies.push(energy);
+        }
+    }
+    Ok(EffectResult::new())
+}
+
+/// Energy Switch: move 1 basic energy from 1 Pokemon to another.
+pub fn effect_energy_switch(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    // Move 1 energy from active to bench
+    let energy = state.players[player.0].active.as_mut().and_then(|s| s.energies.pop());
+    if let Some(eid) = energy {
+        let bench = state.players[player.0].bench.iter_mut().find(|s| s.as_ref().map(|s| !s.is_empty()).unwrap_or(false));
+        if let (Some(slot), _) = (bench, ()) {
+            if let Some(s) = slot.as_mut() {
+                s.energies.push(eid);
+            }
+        } else {
+            state.players[player.0].active.as_mut().map(|s| s.energies.push(eid));
+        }
+    }
+    Ok(EffectResult::new())
+}
+
+/// Pal Pad: shuffle up to 2 Supporter cards from discard into deck.
+pub fn effect_pal_pad(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    let supporters: Vec<_> = {
+        let ps = &state.players[player.0];
+        ps.discard.iter().enumerate().filter(|(_, &id)| {
+            state.get_card_def(id).map(|d| d.card_type == crate::card::CardType::Supporter).unwrap_or(false)
+        }).take(2).map(|(i, &id)| (i, id)).collect()
+    };
+    for (pos, eid) in supporters.iter().rev() {
+        let ps = &mut state.players[player.0];
+        if let Some(p) = ps.discard.iter().position(|&id| id == *eid) {
+            ps.discard.remove(p);
+            ps.deck.push(*eid);
+        }
+    }
+    Ok(EffectResult::new())
+}
+
+/// Hisuian Heavy Ball: look at prize cards, swap 1 with a card in hand.
+pub fn effect_hisuian_heavy_ball(state: &mut GameState, player: PlayerId) -> Result<EffectResult> {
+    // Simplified: draw a prize card (take top prize)
+    if let Some(prize) = state.players[player.0].prizes.pop() {
+        state.players[player.0].hand.push(prize);
+    }
+    Ok(EffectResult::new())
+}

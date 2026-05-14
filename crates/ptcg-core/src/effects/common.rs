@@ -10,7 +10,7 @@ pub struct EffectResult {
 }
 
 /// Result of resolving an attack with effects.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AttackResult {
     /// Base damage to the defending active Pokemon
     pub damage: u16,
