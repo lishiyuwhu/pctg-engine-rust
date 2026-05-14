@@ -506,20 +506,22 @@ macro_rules! generic_strategy {
         impl DeckStrategy for $name {
             fn score_action(&self, action: &Action, state: &GameState, player: PlayerId) -> f32 {
                 let ps = &state.players[player.0];
+                let opponent = player.opponent();
                 match action {
                     Action::Attack { attack_index, .. } => {
                         let dmg = ps.active.as_ref().and_then(|s| slot_card(s, state))
                             .and_then(|c| c.attacks.get(*attack_index as usize)).map(|a| a.damage).unwrap_or(0);
-                        if would_ko_opponent(state, player, dmg) { 1200.0 }
-                        else if dmg >= 150 { 500.0 + dmg as f32 }
-                        else { 300.0 + dmg as f32 }
+                        if would_ko_opponent(state, player, dmg) { 2000.0 }
+                        else if dmg >= 100 { 800.0 + dmg as f32 }
+                        else if dmg > 0 { 600.0 + dmg as f32 }
+                        else { 100.0 }
                     }
                     Action::AttachEnergy { card: _, target } => {
                         let card = ps.get_slot(*target).and_then(|s| slot_card(s, state));
                         match card {
                             Some(c) => { let gap = attack_energy_gap(ps.get_slot(*target).unwrap(), c);
-                                match gap { 1 => 550.0, 0 => 80.0, _ => 300.0 } }
-                            _ => 40.0
+                                match gap { 1 => 500.0, 0 => 50.0, _ => 250.0 } }
+                            _ => 30.0
                         }
                     }
                     Action::PlayBasicToBench { .. } =>
@@ -538,7 +540,7 @@ macro_rules! generic_strategy {
                 }
             }
             fn heuristic_base(&self, action: &Action) -> f32 { match action {
-                Action::Attack { .. } => 500.0, Action::AttachEnergy { .. } => 220.0,
+                Action::Attack { .. } => 400.0, Action::AttachEnergy { .. } => 220.0,
                 Action::PlayTrainer { .. } => 110.0, Action::PlayBasicToBench { .. } => 180.0,
                 Action::UseAbility { .. } => 160.0, Action::Retreat { .. } => 90.0,
                 Action::Evolve { .. } => 300.0, Action::EndTurn => 0.0, _ => 100.0

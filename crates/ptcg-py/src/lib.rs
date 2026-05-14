@@ -456,7 +456,144 @@ fn parse_choices(map: &HashMap<String, serde_json::Value>) -> Choices {
 
 // ── Batch Runner ────────────────────────────────────────────────────
 
-/// Run N games in parallel with random actions, returning statistics.
+/// Run N random-matchup games in parallel using strategy bots.
+/// Randomly selects 2 different strategies per game from all 18 decks.
+#[pyfunction]
+fn run_random_matchup_batch(n_games: usize, seed: u64, threads: Option<usize>) -> PyResult<String> {
+    use rayon::prelude::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use ptcg_core::deck::{MatchConfig, StartingPlayer};
+    use ptcg_core::strategy::DeckStrategy;
+
+    if let Some(n) = threads {
+        if n > 0 {
+            rayon::ThreadPoolBuilder::new().num_threads(n).build_global().ok();
+        }
+    }
+
+    // All strategy constructors
+    type StrategyFn = fn() -> Box<dyn DeckStrategy>;
+    let strategies: Vec<(&str, StrategyFn)> = vec![
+        ("Miraidon", || Box::new(ptcg_core::strategy::MiraidonStrategy) as Box<dyn DeckStrategy>),
+        ("Charizard", || Box::new(ptcg_core::strategy::CharizardStrategy)),
+        ("GougingFire", || Box::new(ptcg_core::strategy::GougingFireStrategy)),
+        ("FutureBox", || Box::new(ptcg_core::strategy::FutureBoxStrategy)),
+        ("IronThorns", || Box::new(ptcg_core::strategy::IronThornsStrategy)),
+        ("DialgaMetang", || Box::new(ptcg_core::strategy::DialgaMetangStrategy)),
+        ("PalkiaDusknoir", || Box::new(ptcg_core::strategy::PalkiaDusknoirStrategy)),
+        ("PalkiaGholdengo", || Box::new(ptcg_core::strategy::PalkiaGholdengoStrategy)),
+        ("LostBox", || Box::new(ptcg_core::strategy::LostBoxStrategy)),
+        ("Regidrago", || Box::new(ptcg_core::strategy::RegidragoStrategy)),
+        ("LugiaArcheops", || Box::new(ptcg_core::strategy::LugiaArcheopsStrategy)),
+        ("ArceusGiratina", || Box::new(ptcg_core::strategy::ArceusGiratinaStrategy)),
+        ("RagingBoltOgerpon", || Box::new(ptcg_core::strategy::RagingBoltOgerponStrategy)),
+        ("Gardevoir", || Box::new(ptcg_core::strategy::GardevoirStrategy)),
+        ("BlisseyTank", || Box::new(ptcg_core::strategy::BlisseyTankStrategy)),
+        ("DragapultBanette", || Box::new(ptcg_core::strategy::DragapultBanetteStrategy)),
+        ("DragapultDusknoir", || Box::new(ptcg_core::strategy::DragapultDusknoirStrategy)),
+        ("DragapultCharizard", || Box::new(ptcg_core::strategy::DragapultCharizardStrategy)),
+    ];
+
+    let win_counts: Vec<AtomicU64> = (0..strategies.len()).map(|_| AtomicU64::new(0)).collect();
+    let draws = AtomicU64::new(0);
+    let total_turns = AtomicU64::new(0);
+    let total_steps = AtomicU64::new(0);
+
+    // Deck template getters
+    type DeckFn = fn() -> ptcg_core::deck::Deck;
+    let deck_getters: Vec<DeckFn> = vec![
+        ptcg_core::deck::templates::miraidon_deck,
+        ptcg_core::deck::templates::charizard_pidgeot_deck,
+        ptcg_core::deck::templates::gouging_fire_deck,
+        ptcg_core::deck::templates::future_box_deck,
+        ptcg_core::deck::templates::iron_thorns_deck,
+        ptcg_core::deck::templates::dialga_metang_deck,
+        ptcg_core::deck::templates::palkia_dusknoir_deck,
+        ptcg_core::deck::templates::palkia_gholdengo_deck,
+        ptcg_core::deck::templates::lost_box_deck,
+        ptcg_core::deck::templates::regidrago_deck,
+        ptcg_core::deck::templates::lugia_archeops_deck,
+        ptcg_core::deck::templates::arceus_giratina_deck,
+        ptcg_core::deck::templates::raging_bolt_deck,
+        ptcg_core::deck::templates::gardevoir_deck,
+        ptcg_core::deck::templates::blissey_tank_deck,
+        ptcg_core::deck::templates::dragapult_banette_deck,
+        ptcg_core::deck::templates::dragapult_dusknoir_deck,
+        ptcg_core::deck::templates::dragapult_charizard_deck,
+    ];
+
+    (0..n_games).into_par_iter().for_each(|i| {
+        let game_seed = seed.wrapping_add(i as u64);
+        let idx1 = (game_seed as usize) % strategies.len();
+        let idx2 = ((game_seed >> 16) as usize) % (strategies.len() - 1);
+        let idx2 = if idx2 >= idx1 { idx2 + 1 } else { idx2 };
+
+        let strat1 = strategies[idx1].1();
+        let strat2 = strategies[idx2].1();
+
+        let config = MatchConfig {
+            player_deck: deck_getters[idx1](),
+            opponent_deck: deck_getters[idx2](),
+            player_name: "P0".into(), opponent_name: "P1".into(),
+            starting_player: StartingPlayer::Random,
+        };
+        let mut engine = Engine::new(config, game_seed);
+        engine.record_replay = false;
+        let mut steps = 0usize;
+        let max_steps = 2000;
+
+        while !engine.state().is_done() && steps < max_steps {
+            let is_setup = matches!(
+                engine.state().turn.phase,
+                ptcg_core::state::Phase::Setup | ptcg_core::state::Phase::Mulligan
+            );
+            let players: Vec<PlayerId> = if is_setup {
+                vec![PlayerId(0), PlayerId(1)]
+            } else {
+                vec![engine.state().turn.active_player]
+            };
+            for &p in &players {
+                if engine.state().is_done() { break; }
+                let actions = engine.legal_actions(p);
+                if actions.is_empty() { continue; }
+                let idx = if p.0 == 0 {
+                    strat1.select_action(&actions, engine.state(), p).unwrap_or(0)
+                } else {
+                    strat2.select_action(&actions, engine.state(), p).unwrap_or(0)
+                };
+                engine.step(p, actions[idx].clone());
+                steps += 1;
+            }
+        }
+
+        total_turns.fetch_add(engine.state().turn.turn_number as u64, Ordering::Relaxed);
+        total_steps.fetch_add(steps as u64, Ordering::Relaxed);
+        match engine.state().winner {
+            Some(PlayerId(0)) => { win_counts[idx1].fetch_add(1, Ordering::Relaxed); }
+            Some(PlayerId(1)) => { win_counts[idx2].fetch_add(1, Ordering::Relaxed); }
+            _ => { draws.fetch_add(1, Ordering::Relaxed); }
+        }
+    });
+
+    let mut results: Vec<serde_json::Value> = Vec::new();
+    for (i, (name, _)) in strategies.iter().enumerate() {
+        results.push(serde_json::json!({
+            "deck": name,
+            "wins": win_counts[i].load(Ordering::Relaxed),
+        }));
+    }
+    let n = n_games as f64;
+    let output = serde_json::json!({
+        "total_games": n_games,
+        "draws": draws.load(Ordering::Relaxed),
+        "avg_turns": total_turns.load(Ordering::Relaxed) as f64 / n,
+        "avg_steps": total_steps.load(Ordering::Relaxed) as f64 / n,
+        "results": results,
+    });
+    Ok(serde_json::to_string(&output).unwrap_or_else(|_| "{}".into()))
+}
+
+/// Run N games in parallel, returning statistics.
 #[pyfunction]
 fn run_batch(n_games: usize, seed: u64, threads: Option<usize>) -> PyResult<String> {
     use rayon::prelude::*;
@@ -548,6 +685,7 @@ fn ptcg_py(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(create_engine, m)?)?;
     m.add_function(wrap_pyfunction!(create_engine_mirror, m)?)?;
     m.add_function(wrap_pyfunction!(run_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(run_random_matchup_batch, m)?)?;
     m.add_class::<PyEngine>()?;
     Ok(())
 }
