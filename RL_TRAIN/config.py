@@ -43,3 +43,13 @@ REWARD_CONFIG = {
     "opponent_ko": 0.05,
     "own_ko": -0.05,
 }
+
+# ── Wandb ──
+WANDB_CONFIG = {
+    "project": "ptcg-rl",
+    "name": None,  # auto-generate from timestamp
+    "entity": None,  # your wandb username or team
+    "tags": ["phase1", "miraidon-vs-charizard", "masked-ppo"],
+    "notes": "Phase 1: fixed Miraidon vs Charizard/Pidgeot matchup. "
+             "MaskablePPO agent plays Miraidon (P0) against scripted Charizard opponent (P1).",
+}

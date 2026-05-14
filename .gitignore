@@ -24,3 +24,5 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+RL_TRAIN/checkpoints/
+RL_TRAIN/logs/
