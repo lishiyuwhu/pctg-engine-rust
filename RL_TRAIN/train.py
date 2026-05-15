@@ -95,14 +95,14 @@ def evaluate(env, model, episodes=100):
 class WandbEvalCallback:
     """SB3-compatible callback that logs eval metrics to wandb."""
 
-    def __init__(self, eval_env, eval_freq, eval_episodes, use_wandb, model_save_dir):
+    def __init__(self, eval_env, eval_freq, eval_episodes, use_wandb, model_save_dir, start_step=0):
         self.eval_env = eval_env
         self.eval_freq = eval_freq
         self.eval_episodes = eval_episodes
         self.use_wandb = use_wandb
         self.model_save_dir = Path(model_save_dir)
         self.model_save_dir.mkdir(exist_ok=True)
-        self._step = 0
+        self._step = start_step
         self._best_win_rate = 0.0
         self._t0 = time.time()
 
@@ -153,6 +153,10 @@ class WandbEvalCallback:
 def main():
     parser = argparse.ArgumentParser(description="PTCG RL Training")
     parser.add_argument("--eval-only", type=str, help="Path to model .zip to evaluate")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Resume training from a checkpoint .zip")
+    parser.add_argument("--resume-wandb-id", type=str, default=None,
+                        help="Wandb run ID to resume logging to")
     parser.add_argument("--timesteps", type=int, default=TRAIN_CONFIG["total_timesteps"])
     parser.add_argument("--seed", type=int, default=TRAIN_CONFIG["seed"])
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging")
@@ -188,6 +192,8 @@ def main():
         wandb.init(
             project=WANDB_CONFIG["project"],
             name=run_name,
+            id=args.resume_wandb_id,  # resume existing wandb run if given
+            resume="must" if args.resume_wandb_id else "allow",
             entity=WANDB_CONFIG.get("entity"),
             tags=tags,
             notes=WANDB_CONFIG.get("notes", ""),
@@ -206,6 +212,8 @@ def main():
     # ── Print config ──
     print("=" * 60)
     print("PTCG RL Training — Phase 1: Miraidon vs Charizard")
+    if args.resume:
+        print(f"  Resume: {args.resume}")
     print(f"  Wandb: {'enabled' if use_wandb else 'disabled'}")
     print(f"  Algorithm: MaskablePPO")
     print(f"  Policy: {PPO_CONFIG['policy']}")
@@ -214,28 +222,41 @@ def main():
     print(f"  Opponent: {ENV_CONFIG['opponent']}")
     print("=" * 60)
 
-    # ── Create env & model ──
+    # ── Create or load model ──
     env = make_env(seed=args.seed)
 
     from sb3_contrib import MaskablePPO
 
-    model = MaskablePPO(
-        PPO_CONFIG["policy"],
-        env,
-        learning_rate=PPO_CONFIG["learning_rate"],
-        n_steps=PPO_CONFIG["n_steps"],
-        batch_size=PPO_CONFIG["batch_size"],
-        n_epochs=PPO_CONFIG["n_epochs"],
-        gamma=PPO_CONFIG["gamma"],
-        gae_lambda=PPO_CONFIG["gae_lambda"],
-        clip_range=PPO_CONFIG["clip_range"],
-        ent_coef=PPO_CONFIG["ent_coef"],
-        vf_coef=PPO_CONFIG["vf_coef"],
-        max_grad_norm=PPO_CONFIG["max_grad_norm"],
-        verbose=PPO_CONFIG["verbose"],
-        tensorboard_log=PPO_CONFIG["tensorboard_log"] if not use_wandb else None,
-        seed=args.seed,
-    )
+    if args.resume:
+        print(f"Loading checkpoint: {args.resume}")
+        model = MaskablePPO.load(args.resume, env=env)
+        # Restore PPO hyperparameters that aren't serialized by default
+        model.learning_rate = PPO_CONFIG["learning_rate"]
+        model.clip_range = PPO_CONFIG["clip_range"]
+        model.ent_coef = PPO_CONFIG["ent_coef"]
+        model.vf_coef = PPO_CONFIG["vf_coef"]
+        model.max_grad_norm = PPO_CONFIG["max_grad_norm"]
+        resumed_steps = model.num_timesteps
+        print(f"Resumed at step {resumed_steps:,}")
+    else:
+        model = MaskablePPO(
+            PPO_CONFIG["policy"],
+            env,
+            learning_rate=PPO_CONFIG["learning_rate"],
+            n_steps=PPO_CONFIG["n_steps"],
+            batch_size=PPO_CONFIG["batch_size"],
+            n_epochs=PPO_CONFIG["n_epochs"],
+            gamma=PPO_CONFIG["gamma"],
+            gae_lambda=PPO_CONFIG["gae_lambda"],
+            clip_range=PPO_CONFIG["clip_range"],
+            ent_coef=PPO_CONFIG["ent_coef"],
+            vf_coef=PPO_CONFIG["vf_coef"],
+            max_grad_norm=PPO_CONFIG["max_grad_norm"],
+            verbose=PPO_CONFIG["verbose"],
+            tensorboard_log=PPO_CONFIG["tensorboard_log"] if not use_wandb else None,
+            seed=args.seed,
+        )
+        resumed_steps = 0
 
     # ── Training loop ──
     eval_env = make_env(seed=999)
@@ -245,12 +266,13 @@ def main():
         eval_episodes=TRAIN_CONFIG["eval_episodes"],
         use_wandb=use_wandb,
         model_save_dir="checkpoints",
+        start_step=resumed_steps,
     )
     eval_callback.init_callback(model)
 
     ckpt_dir = Path("checkpoints")
     ckpt_dir.mkdir(exist_ok=True)
-    total_steps = 0
+    total_steps = resumed_steps
     iteration = 0
 
     while total_steps < args.timesteps:
