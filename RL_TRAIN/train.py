@@ -265,12 +265,13 @@ def main():
         eval_freq=TRAIN_CONFIG["eval_frequency"],
         eval_episodes=TRAIN_CONFIG["eval_episodes"],
         use_wandb=use_wandb,
-        model_save_dir="checkpoints",
+        model_save_dir=str(script_dir / "checkpoints"),
         start_step=resumed_steps,
     )
     eval_callback.init_callback(model)
 
-    ckpt_dir = Path("checkpoints")
+    script_dir = Path(__file__).parent
+    ckpt_dir = script_dir / "checkpoints"
     ckpt_dir.mkdir(exist_ok=True)
     total_steps = resumed_steps
     iteration = 0
