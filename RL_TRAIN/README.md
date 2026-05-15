@@ -46,30 +46,23 @@ python train.py --timesteps 1_000_000
 # 评估已保存的模型
 python train.py --eval-only checkpoints/ppo_best.zip
 
-# 从 checkpoint 继续训练 (断点续训)
-python train.py --resume checkpoints/ppo_final.zip
-
-# 断点续训 + 继续记录到同一个 wandb run
-python train.py --resume checkpoints/ppo_best.zip --resume-wandb-id <WANDB_RUN_ID>
-
-# 续训到指定步数
-python train.py --resume checkpoints/ppo_best.zip --timesteps 20_000_000
+# 强制从头开始训练 (忽略 checkpoint)
+python train.py --fresh
 ```
 
-## 断点续训
+## 自动断点续训
 
-每次 `model.learn()` 结束后，模型会自动保存到 `checkpoints/ppo_final.zip`。
-可以随时关闭 WSL，下次用 `--resume` 继续训练:
+训练命令是**幂等**的。相同命令反复执行即可:
 
 ```bash
-python train.py --resume checkpoints/ppo_final.zip
+python train.py
 ```
 
-需要继续记录到同一个 wandb run（保持曲线连续）:
+- 无 checkpoint → **全新训练**
+- 有 checkpoint → **自动加载继续**
+- wandb 曲线也会自动续接
 
-```bash
-python train.py --resume checkpoints/ppo_final.zip --resume-wandb-id <WANDB_RUN_ID>
-```
+随时 Ctrl+C 关掉，下次 `python train.py` 从断点继续。想强制全新开始加 `--fresh`。
 
 ## Wandb 配置
 

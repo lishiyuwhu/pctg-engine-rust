@@ -153,10 +153,7 @@ class WandbEvalCallback:
 def main():
     parser = argparse.ArgumentParser(description="PTCG RL Training")
     parser.add_argument("--eval-only", type=str, help="Path to model .zip to evaluate")
-    parser.add_argument("--resume", type=str, default=None,
-                        help="Resume training from a checkpoint .zip")
-    parser.add_argument("--resume-wandb-id", type=str, default=None,
-                        help="Wandb run ID to resume logging to")
+    parser.add_argument("--fresh", action="store_true", help="Force fresh start, ignore existing checkpoint")
     parser.add_argument("--timesteps", type=int, default=TRAIN_CONFIG["total_timesteps"])
     parser.add_argument("--seed", type=int, default=TRAIN_CONFIG["seed"])
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging")
@@ -167,6 +164,13 @@ def main():
 
     use_wandb = not args.no_wandb
 
+    # ── Paths ──
+    script_dir = Path(__file__).parent
+    ckpt_dir = script_dir / "checkpoints"
+    ckpt_dir.mkdir(exist_ok=True)
+    final_ckpt = ckpt_dir / "ppo_final.zip"
+    wandb_id_file = ckpt_dir / "wandb_id.txt"
+
     # ── Evaluation-only mode ──
     if args.eval_only:
         from sb3_contrib import MaskablePPO
@@ -176,6 +180,11 @@ def main():
         print(json.dumps({k: round(v, 3) if isinstance(v, float) else v
                           for k, v in result.items() if k != "raw"}, indent=2))
         return
+
+    # ── Auto-detect checkpoint ──
+    resume_ckpt = None
+    if not args.fresh and final_ckpt.exists():
+        resume_ckpt = str(final_ckpt)
 
     # ── Wandb init ──
     if use_wandb:
@@ -189,11 +198,16 @@ def main():
         if run_name is None:
             run_name = f"phase1-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
+        # Auto-resume wandb run if checkpoint exists
+        resume_wandb_id = None
+        if resume_ckpt and wandb_id_file.exists():
+            resume_wandb_id = wandb_id_file.read_text().strip()
+
         wandb.init(
             project=WANDB_CONFIG["project"],
-            name=run_name,
-            id=args.resume_wandb_id,  # resume existing wandb run if given
-            resume="must" if args.resume_wandb_id else "allow",
+            name=run_name if not resume_wandb_id else None,
+            id=resume_wandb_id,
+            resume="must" if resume_wandb_id else "allow",
             entity=WANDB_CONFIG.get("entity"),
             tags=tags,
             notes=WANDB_CONFIG.get("notes", ""),
@@ -207,18 +221,17 @@ def main():
                 "action_space": 1024,
             },
         )
-        print(f"wandb run: {wandb.run.url}" if wandb.run else "wandb offline")
+        if wandb.run and wandb.run.id:
+            wandb_id_file.write_text(wandb.run.id)
+        print(f"wandb: {wandb.run.url}" if wandb.run else "wandb offline")
 
     # ── Print config ──
     print("=" * 60)
     print("PTCG RL Training — Phase 1: Miraidon vs Charizard")
-    if args.resume:
-        print(f"  Resume: {args.resume}")
+    print(f"  Mode: {'RESUME' if resume_ckpt else 'FRESH'}")
     print(f"  Wandb: {'enabled' if use_wandb else 'disabled'}")
     print(f"  Algorithm: MaskablePPO")
-    print(f"  Policy: {PPO_CONFIG['policy']}")
     print(f"  Total timesteps: {args.timesteps:,}")
-    print(f"  Eval frequency: {TRAIN_CONFIG['eval_frequency']:,}")
     print(f"  Opponent: {ENV_CONFIG['opponent']}")
     print("=" * 60)
 
@@ -227,10 +240,9 @@ def main():
 
     from sb3_contrib import MaskablePPO
 
-    if args.resume:
-        print(f"Loading checkpoint: {args.resume}")
-        model = MaskablePPO.load(args.resume, env=env)
-        # Restore PPO hyperparameters that aren't serialized by default
+    if resume_ckpt:
+        print(f"Loading checkpoint: {resume_ckpt}")
+        model = MaskablePPO.load(resume_ckpt, env=env)
         model.learning_rate = PPO_CONFIG["learning_rate"]
         model.clip_range = PPO_CONFIG["clip_range"]
         model.ent_coef = PPO_CONFIG["ent_coef"]
@@ -270,9 +282,6 @@ def main():
     )
     eval_callback.init_callback(model)
 
-    script_dir = Path(__file__).parent
-    ckpt_dir = script_dir / "checkpoints"
-    ckpt_dir.mkdir(exist_ok=True)
     total_steps = resumed_steps
     iteration = 0
 
@@ -287,15 +296,18 @@ def main():
         # Eval + wandb logging
         eval_callback._on_step(total_steps)
 
-        # Periodic checkpoint save
+        # Periodic milestone save
         if total_steps % TRAIN_CONFIG["save_frequency"] == 0:
             path = ckpt_dir / f"ppo_step_{total_steps // 1_000_000}M"
             model.save(str(path))
-            print(f"  -> Saved checkpoint {path}")
+            print(f"  -> Saved milestone {path}")
+
+        # Always update the auto-resume checkpoint
+        model.save(str(final_ckpt))
 
     # Final save
-    model.save(str(ckpt_dir / "ppo_final"))
-    print(f"\nTraining complete.")
+    model.save(str(final_ckpt))
+    print(f"\nTraining complete. Checkpoint: {final_ckpt}")
 
     if use_wandb:
         import wandb
